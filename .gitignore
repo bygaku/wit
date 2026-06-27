@@ -1,0 +1,46 @@
+# ==========================================
+# JetBrains IDEs (CLion)
+# ==========================================
+.idea/
+!.idea/runConfigurations/
+!.idea/customDictionaries/
+
+# Local caches
+*.iws
+*.iml
+cmake-build-*/
+
+# ==========================================
+# CMake / C++ build results
+# ==========================================
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+[Oo]ut/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+CMakeLists.txt.user
+CMakeCache.txt
+CMakeFiles
+CMakeScripts
+Testing
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+CMakeUserPresets.json
+
+# ==========================================
+# Others
+# ==========================================
+.DS_Store
+Thumbs.db
