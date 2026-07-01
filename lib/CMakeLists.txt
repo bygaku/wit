@@ -3,5 +3,5 @@
 # Fetch third-party data first
 add_subdirectory(external)
 
-# Wit library
-add_subdirectory(wit)
+# Wit Audio System
+add_subdirectory(witas)

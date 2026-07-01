@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 4.2)
 set(CMAKE_CXX_STANDARD          17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS        OFF)
-set(PROJ_CODE "wit")    # complete name: wit audio system
-set(MYLIB_CODE  "wit")  # complete name: wit audio system
+set(PROJ_CODE  "wit")  # complete name: wit middleware
+set(MYLIB_CODE "wit")  # complete name: wit audio system (Runtime)
 
 project(${PROJ_CODE}
         VERSION     0.1

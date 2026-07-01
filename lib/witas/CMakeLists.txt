@@ -31,3 +31,11 @@ target_link_libraries(${MYLIB_CODE}
         PRIVATE
         miniaudio
 )
+
+if(MSVC)
+target_compile_options(${MYLIB_CODE}
+        PRIVATE
+        /W4
+        /permissive-
+)
+endif()
