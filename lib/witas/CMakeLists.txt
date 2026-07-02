@@ -1,20 +1,12 @@
 # My library root
-set(MYLIB_SRC
-        dummy.cpp
-)
-
-set(MYLIB_PUBLIC_DIR
-        wit/
-)
-
-set(MYLIB_INCLUDE_DIR
-        src/
-)
+file(GLOB SOURCES CONFIGURE_DEPENDS "*.cpp")
+set(MYLIB_PUBLIC_DIR wit/)
+set(MYLIB_INCLUDE_DIR src/)
 
 # Static library defined
 add_library(${MYLIB_CODE}
         STATIC
-        ${MYLIB_SRC}
+        ${SOURCES}
 )
 
 target_include_directories(${MYLIB_CODE}
