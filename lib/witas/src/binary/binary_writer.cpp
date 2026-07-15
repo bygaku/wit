@@ -44,7 +44,7 @@ void BinaryWriter::WriteS64(int64_t v) { WriteU64(static_cast<uint64_t>(v)); }
 
 void BinaryWriter::WriteF32(float v) {
     uint32_t bits;
-    std::memcpy(&bits, &v, sizeof(bits)
+    std::memcpy(&bits, &v, sizeof(bits));
 
     WriteU32(bits);
 }

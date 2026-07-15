@@ -122,4 +122,4 @@ private:
 
 }
 
-#endif //WIT_RING_BUFFER_H
+#endif // WIT_RING_BUFFER_H
