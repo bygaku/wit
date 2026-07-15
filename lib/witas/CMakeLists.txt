@@ -1,24 +1,15 @@
 # My library root
-set(MYLIB_SRC
-        dummy.cpp
-)
-
-set(MYLIB_PUBLIC_DIR
-        wit/
-)
-
-set(MYLIB_INCLUDE_DIR
-        src/
-)
+set(MYLIB_PUBLIC_DIR wit/)
+set(MYLIB_INCLUDE_DIR src/)
 
 # Static library defined
 add_library(${MYLIB_CODE}
         STATIC
-        ${MYLIB_SRC}
+        ${SOURCES}
 )
 
 target_include_directories(${MYLIB_CODE}
-        INTERFACE
+        PUBLIC
         ${MYLIB_PUBLIC_DIR}
 )
 
@@ -39,3 +30,7 @@ target_compile_options(${MYLIB_CODE}
         /permissive-
 )
 endif()
+
+# Additional directories
+add_subdirectory(src/binary)
+add_subdirectory(src/util)
