@@ -50,7 +50,7 @@ private:
     WitResult ParseHeadChunk(const uint8_t* data, uint32_t size);
     WitResult ParseFmtChunk (const uint8_t* data, uint32_t size);
     WitResult ParseDuckChunk(const uint8_t* data, uint32_t size);
-    WitResult ParseCatsChunk(const uint8_t* data, uint32_t size);
+    WitResult ParseCateChunk(const uint8_t* data, uint32_t size);
 
 	/* =====================================================================
 	 * Identify
