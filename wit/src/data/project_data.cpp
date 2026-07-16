@@ -14,7 +14,7 @@ namespace {
 constexpr uint16_t RUNTIME_FORMAT_VERSION_MAJOR = 1; ///< Major version of the binary format supported by the runtime
 }  // namespace
 
-WitResult ProjectData::LoadFromBytes(const uint8_t* data, size_t size) {
+WitResult ProjectData::Load(const uint8_t* data, size_t size) {
 	auto res = WIT_RESULT_SUCCESS;
 
     binary::RiffChunkIterator itr;

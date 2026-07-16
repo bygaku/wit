@@ -28,9 +28,11 @@ target_compile_options(${MYLIB_CODE}
         PRIVATE
         /W4
         /permissive-
+        /utf-8
 )
 endif()
 
 # Additional directories
 add_subdirectory(src/binary)
 add_subdirectory(src/util)
+add_subdirectory(src/data)

@@ -33,7 +33,7 @@ public:
 	 * @retval WIT_RESULT_INVALID_FORMAT    malformed binary or required chunk missing.
 	 * @retval WIT_RESULT_VERSION_MISMATCH  format_version_major does not match runtime.
      */
-    WitResult LoadFromBytes(const uint8_t* data, size_t size);
+    WitResult Load(const uint8_t* data, size_t size);
 
 	/* =====================================================================
 	 * Read-onlyyyy accessors
