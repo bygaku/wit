@@ -13,7 +13,7 @@
 
 #include "audio_format.h"
 #include "binary/uuid.h"
-#include "category_register.h"
+#include "category_store.h"
 #include "ducking_settings.h"
 
 namespace wit {
@@ -44,7 +44,7 @@ public:
     [[nodiscard]] const std::string&      ProjectName()  const noexcept { return project_name_; }
     [[nodiscard]] const AudioFormat&      Format()       const noexcept { return format_; }
     [[nodiscard]] const DuckingSettings&  Ducking()      const noexcept { return ducking_; }
-    [[nodiscard]] const CategoryRegister& Categories()   const noexcept { return categories_; }
+    [[nodiscard]] const CategoryStore& Categories()   const noexcept { return categories_; }
 
 private:
     WitResult ParseHeadChunk(const uint8_t* data, uint32_t size);
@@ -65,7 +65,7 @@ private:
 	 * ===================================================================== */
     AudioFormat       format_;
     DuckingSettings   ducking_;
-    CategoryRegister  categories_;
+    CategoryStore  categories_;
 };
 
 }

@@ -2,8 +2,8 @@
  * Created by intwi on 2026/07/03.
  * Copyright (c) 2026 All rights reserved.
  */
-#ifndef WIT_CATEGORY_REGISTER_H
-#define WIT_CATEGORY_REGISTER_H
+#ifndef WIT_CATEGORY_STORE_H
+#define WIT_CATEGORY_STORE_H
 
 #include <cstddef>
 #include <cstdint>
@@ -14,13 +14,13 @@
 namespace wit {
 
 /**
- * @class CategoryRegister
+ * @class CategoryStore
  * @brief Maintain project category definitions.
  * @note It's not used in v1.0
  */
-class CategoryRegister {
+class CategoryStore {
 public:
-    CategoryRegister() = default;
+    CategoryStore() = default;
 
     /**
      * @brief Add a category.
@@ -60,4 +60,4 @@ private:
 
 }
 
-#endif // WIT_CATEGORY_REGISTER_H
+#endif // WIT_CATEGORY_STORE_H
