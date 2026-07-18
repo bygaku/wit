@@ -5,7 +5,9 @@ set(MYLIB_INCLUDE_DIR src/)
 # Static library defined
 add_library(${MYLIB_CODE}
         STATIC
-        ${SOURCES}
+        src/audio_engine.cpp
+        src/wit_c_api.cpp
+        src/miniaudio_impl.cpp
 )
 
 target_include_directories(${MYLIB_CODE}
@@ -36,3 +38,4 @@ endif()
 add_subdirectory(src/binary)
 add_subdirectory(src/util)
 add_subdirectory(src/data)
+add_subdirectory(src/runtime)
