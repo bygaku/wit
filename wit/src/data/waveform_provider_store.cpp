@@ -80,11 +80,13 @@ WitResult WaveformProviderStore::ValidateWwbFile(const char* wwb_path, const Cue
 				if (!r.ReadUuid(wwb_head_uuid))					return WIT_RESULT_INVALID_FORMAT;
 
 				has_head = true;
+				break;
 			}
 			case binary::FOURCC_DATA: {
 				if (has_data) return WIT_RESULT_INVALID_FORMAT;
 
 				has_data = true;
+				break;
 			}
 			default: break;
 		}
