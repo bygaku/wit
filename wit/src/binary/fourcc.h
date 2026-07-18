@@ -59,7 +59,7 @@ constexpr CHUNK_ID FOURCC_DUCK      = MakeFourCc('D', 'U', 'C', 'K');
 constexpr CHUNK_ID FOURCC_CATE      = MakeFourCc('C', 'A', 'T', 'E');
 
 // Chunks for .wccb
-constexpr CHUNK_ID FOURCC_CUSE      = MakeFourCc('C', 'U', 'S', 'E');
+constexpr CHUNK_ID FOURCC_USEC      = MakeFourCc('U', 'S', 'E', 'C');
 constexpr CHUNK_ID FOURCC_CUES      = MakeFourCc('C', 'U', 'E', 'S');
 
 // Chunk for .wwb

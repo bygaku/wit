@@ -3,4 +3,5 @@ target_sources(${MYLIB_CODE}
         PRIVATE
         category_store.cpp
         project_data.cpp
+        cue_collection.cpp
 )
