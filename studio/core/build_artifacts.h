@@ -51,10 +51,10 @@ struct BuildResult {
  * @struct WaveformModel
  * @brief A single audio file reference registered to a cue.
  *
- * @note wav_file_path is stored relative to the .wproj location.
+ * @note file_path is stored relative to the .wproj location.
  */
 struct WaveformModel {
-    std::string wav_file_path;
+    std::string file_path;
     std::string display_name;
 };
 

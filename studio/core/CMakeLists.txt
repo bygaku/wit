@@ -6,6 +6,9 @@ find_package(Qt6 REQUIRED COMPONENTS
 
 set(STUDIO_CORE_SRC
         dummy.cpp
+        project_builder.cpp
+        audio_converter.cpp
+        project_validator.cpp
 )
 
 add_library(${STUDIO_CODE}
@@ -24,7 +27,7 @@ target_link_libraries(${STUDIO_CODE}
         PUBLIC
         wit
         PRIVATE
-        miniaudio   # Audio file format - decode
+        miniaudio   # decode
         Qt6::Core
 )
 
