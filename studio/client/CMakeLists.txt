@@ -8,6 +8,7 @@ find_package(Qt6 REQUIRED COMPONENTS
 
 set(STUDIO_CLIENT_SRC
         main.cpp
+        main_window.cpp
 )
 
 add_executable(${APPLICATION_CODE}
