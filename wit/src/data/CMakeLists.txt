@@ -4,4 +4,5 @@ target_sources(${MYLIB_CODE}
         category_store.cpp
         project_data.cpp
         cue_collection.cpp
+        memory_waveform_provider.cpp
 )
