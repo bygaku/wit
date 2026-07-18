@@ -9,6 +9,7 @@ set(STUDIO_CORE_SRC
         project_builder.cpp
         audio_converter.cpp
         project_validator.cpp
+        project_serializer.cpp
 )
 
 add_library(${STUDIO_CODE}
