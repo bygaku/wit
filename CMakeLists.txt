@@ -17,3 +17,5 @@ enable_testing()
 add_subdirectory(external)
 # wit static library
 add_subdirectory(wit)
+# wit studio
+add_subdirectory(studio)
