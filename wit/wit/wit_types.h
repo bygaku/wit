@@ -44,6 +44,7 @@ typedef enum WitResult {
     WIT_RESULT_PROJECT_MISMATCH,	///< プロジェクトに含まれていない WCCB や WWB が指定されました。
     WIT_RESULT_WWB_MISMATCH,		///< WCCB に含まれていない WWB が指定されました。
     WIT_RESULT_UNKNOWN_CATEGORY,	///< 未知のカテゴリが指定されました。（0-4: Wit Defined 5-: User defined）
+	WIT_RESULT_STREAMING_BUSY,		///< ストリーミング再生を設定したキューは同時に最大 1Voice のみ再生できます。
 } WitResult;
 
 typedef enum WitPlaybackStatus {
