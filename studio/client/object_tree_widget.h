@@ -70,6 +70,20 @@ public:
  	 */
 	[[nodiscard]] int TopLevelIndexOf(QTreeWidgetItem* item) const;
 
+	/**
+	 * @brief Resolve the current selection to model coordinates.
+	 * @param out_collection Receives the collection index, or -1.
+	 * @param out_cue        Receives the cue index within the collection, or -1
+	 *                       when a collection (not a cue) is selected.
+	 */
+	void CurrentSelection(int& out_collection, int& out_cue) const;
+
+	/**
+	 * @brief
+	 *
+	 *
+	 */
+	void Clear();
 protected:
 	/**
 	 * @note Accepts right-clicks and displays a menu.

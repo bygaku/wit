@@ -87,6 +87,32 @@ int ObjectTreeWidget::TopLevelIndexOf(QTreeWidgetItem* item) const {
 	return m_tree_widget_->indexOfTopLevelItem(item);
 }
 
+void ObjectTreeWidget::CurrentSelection(int& out_collection, int& out_cue) const {
+	out_collection	= -1;
+	out_cue			= -1;
+
+	auto* item = m_tree_widget_->currentItem();
+	if (item == nullptr) return;
+
+	if (item->type() == ItemType::CueCollection) {
+		out_collection = m_tree_widget_->indexOfTopLevelItem(item);
+		return;
+	}
+
+	if (item->type() == ItemType::Cue) {
+		QTreeWidgetItem* parent = item->parent();
+		if (parent == nullptr) return;
+
+		out_collection = m_tree_widget_->indexOfTopLevelItem(parent);
+		out_cue        = parent->indexOfChild(item);
+	}
+}
+
+void ObjectTreeWidget::Clear() {
+	const QSignalBlocker blocker(m_tree_widget_);
+	m_tree_widget_->clear();
+}
+
 /* =====================================================================
  * Context menu
  * ===================================================================== */

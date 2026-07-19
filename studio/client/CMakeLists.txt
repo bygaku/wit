@@ -9,6 +9,9 @@ find_package(Qt6 REQUIRED COMPONENTS
 set(STUDIO_CLIENT_SRC
         main.cpp
         main_window.cpp
+        cue_properties_editor_widget.cpp
+        project_properties_editor_widget.cpp
+        object_tree_widget.cpp
 )
 
 add_executable(${APPLICATION_CODE}
