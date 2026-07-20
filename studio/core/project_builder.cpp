@@ -184,6 +184,8 @@ void BuildWccb(const ProjectModel& project,
         w.WriteU16(cue.category_id);
         w.WriteU8(static_cast<uint8_t>(cue.cue_type));
         w.WriteU8(cue.loop_enabled ? 1 : 0);
+    	w.WriteU64(0);	///< loop_start_point:	0 = cue head
+    	w.WriteU64(0);	///< loop_end_point:	0 = end of longest waveform
         w.WriteU8(static_cast<uint8_t>(cue.streaming_mode));
         w.WriteF32(cue.base_volume);
         w.WriteF32(cue.base_pitch);
