@@ -121,7 +121,8 @@ public:
 	/* =====================================================================
 	 * Voice controller
 	 * ===================================================================== */
-    WitResult VoiceGetStatus(WitVoiceHn voice_handle, WitPlaybackStatus* out_status);
+	WitPlaybackStatus VoiceGetStatus(WitVoiceHn voice_handle);
+	bool      VoiceIsActive (WitVoiceHn voice_handle);
     WitResult VoicePause (WitVoiceHn voice_handle);
     WitResult VoiceResume(WitVoiceHn voice_handle);
     WitResult VoiceStop  (WitVoiceHn voice_handle);
