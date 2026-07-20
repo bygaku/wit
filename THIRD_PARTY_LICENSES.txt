@@ -1,0 +1,74 @@
+================================================================================
+Wit Middleware - Third-Party Licenses
+================================================================================
+
+Wit Middleware itself is distributed under the MIT License (see LICENSE).
+
+This distribution additionally bundles third-party software. Each component
+remains under its own license, listed below. The Wit MIT License applies only
+to Wit's own source code, the Witas runtime library, and WitStudio's own code.
+
+--------------------------------------------------------------------------------
+1. miniaudio
+--------------------------------------------------------------------------------
+Homepage: https://miniaud.io
+Source:   https://github.com/mackron/miniaudio
+Used by:  Witas runtime (audio backend) and WitStudio (offline format conversion)
+
+miniaudio is dual licensed. You may choose either public domain (Unlicense) or
+MIT No Attribution (MIT-0). Wit relies on it under these terms; no attribution
+is strictly required, but the notice is reproduced here for completeness.
+
+    ALTERNATIVE 2 - MIT No Attribution
+
+    Copyright 2025 David Reid
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+    IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+2. Qt 6 (bundled with WitStudio only)
+--------------------------------------------------------------------------------
+Homepage: https://www.qt.io
+Licensing: https://www.qt.io/licensing/open-source-lgpl-obligations
+Used by:  WitStudio (GUI authoring tool) only. The Witas runtime library does
+          NOT depend on Qt.
+
+WitStudio uses Qt 6 under the GNU Lesser General Public License, version 3
+(LGPLv3). The Qt dynamic-link libraries (Qt6Core.dll, Qt6Gui.dll,
+Qt6Widgets.dll, the platforms/ plugins, and any other Qt DLLs shipped alongside
+WitStudio.exe) are the property of The Qt Company and its contributors and
+remain licensed under the LGPLv3. They are NOT covered by Wit's MIT License.
+
+In accordance with the LGPLv3:
+
+  - WitStudio links against Qt dynamically. The Qt libraries are shipped as
+    separate DLL files next to WitStudio.exe.
+  - You may replace these Qt DLLs with a different or modified build of Qt of
+    the same major version, and run WitStudio against your replacement.
+  - The full text of the GNU LGPLv3 is available at:
+        https://www.gnu.org/licenses/lgpl-3.0.html
+    and the corresponding GPLv3 (referenced by the LGPLv3) at:
+        https://www.gnu.org/licenses/gpl-3.0.html
+  - Qt source code corresponding to the shipped binaries is available from:
+        https://download.qt.io
+
+If you obtained WitStudio as part of the Wit SDK and require the Qt source
+corresponding to the bundled Qt version, refer to the Qt download site above
+for the matching Qt 6 release.
+
+================================================================================
+End of third-party notices.
+================================================================================
