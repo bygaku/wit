@@ -13,7 +13,9 @@ project(${PROJ_CODE}
 
 enable_testing()
 
+# Fetch third-party data first
+add_subdirectory(external)
 # wit static library
-add_subdirectory(lib)
-# test directory
-add_subdirectory(test)
+add_subdirectory(wit)
+# wit studio
+add_subdirectory(studio)
