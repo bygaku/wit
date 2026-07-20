@@ -39,3 +39,17 @@ add_subdirectory(src/binary)
 add_subdirectory(src/util)
 add_subdirectory(src/data)
 add_subdirectory(src/runtime)
+
+# Distribution: static library split by configuration (Debug / Release)
+install(TARGETS ${MYLIB_CODE}
+        ARCHIVE DESTINATION lib/x64/$<CONFIG>)
+
+# Public headers
+install(DIRECTORY ${MYLIB_PUBLIC_DIR}
+        DESTINATION include
+        FILES_MATCHING PATTERN "*.h")
+
+install(FILES $<TARGET_FILE_DIR:${MYLIB_CODE}>/${MYLIB_CODE}.pdb
+        DESTINATION lib/x64/$<CONFIG>
+        CONFIGURATIONS Debug
+        OPTIONAL)

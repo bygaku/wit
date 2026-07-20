@@ -711,26 +711,45 @@ WitResult AudioEngine::CuePlayerGetSequentialIndex(WitCuePlayerHn player_handle,
     return WIT_RESULT_SUCCESS;
 }
 
-WitResult AudioEngine::VoiceGetStatus(WitVoiceHn voice_handle, WitPlaybackStatus* out_status) {
-    if (out_status != nullptr) *out_status = WIT_PLAYBACK_STATUS_IDLE;
-    if (!impl_) return WIT_RESULT_INIT_FAILED;
+WitPlaybackStatus AudioEngine::VoiceGetStatus(WitVoiceHn voice_handle) {
+	if (!impl_) return WIT_PLAYBACK_STATUS_IDLE;
 
-    const Voice* v = impl_->voice_pool_.Find(voice_handle);
-    if (v == nullptr) return WIT_RESULT_INVALID_HANDLE;
+	const Voice* v = impl_->voice_pool_.Find(voice_handle);
+	if (v == nullptr) return WIT_PLAYBACK_STATUS_IDLE;
 
-    if (out_status != nullptr) {
-        switch (v->state) {
-            case VoiceState::INACTIVE: *out_status = WIT_PLAYBACK_STATUS_IDLE;     break;
-            case VoiceState::CLAIMED:   *out_status = WIT_PLAYBACK_STATUS_PENDING;  break;
-            case VoiceState::PREPARING: *out_status = WIT_PLAYBACK_STATUS_PENDING;  break;
-            case VoiceState::PLAYING:  *out_status = WIT_PLAYBACK_STATUS_PLAYING;  break;
-            case VoiceState::PAUSED:   *out_status = WIT_PLAYBACK_STATUS_PAUSED;   break;
-            case VoiceState::STOPPING: *out_status = WIT_PLAYBACK_STATUS_STOPPING; break;
-            case VoiceState::FINISHED: *out_status = WIT_PLAYBACK_STATUS_FINISHED; break;
-        }
-    }
+	switch (v->state) {
+		case VoiceState::INACTIVE:  return WIT_PLAYBACK_STATUS_IDLE;
+		case VoiceState::CLAIMED:   return WIT_PLAYBACK_STATUS_PENDING;
+		case VoiceState::PREPARING: return WIT_PLAYBACK_STATUS_PENDING;
+		case VoiceState::PLAYING:   return WIT_PLAYBACK_STATUS_PLAYING;
+		case VoiceState::PAUSED:    return WIT_PLAYBACK_STATUS_PAUSED;
+		case VoiceState::STOPPING:  return WIT_PLAYBACK_STATUS_STOPPING;
+		case VoiceState::FINISHED:  return WIT_PLAYBACK_STATUS_FINISHED;
+	}
 
-    return WIT_RESULT_SUCCESS;
+	return WIT_PLAYBACK_STATUS_IDLE;
+}
+
+bool AudioEngine::VoiceIsActive(WitVoiceHn voice_handle) {
+	if (!impl_) return false;
+
+	const Voice* v = impl_->voice_pool_.Find(voice_handle);
+	if (v == nullptr) return false;
+
+	switch (v->state) {
+		case VoiceState::CLAIMED:
+		case VoiceState::PREPARING:
+		case VoiceState::PLAYING:
+		case VoiceState::PAUSED:
+			return true;
+
+		case VoiceState::INACTIVE:
+		case VoiceState::STOPPING:
+		case VoiceState::FINISHED:
+			return false;
+	}
+
+	return false;
 }
 
 namespace {

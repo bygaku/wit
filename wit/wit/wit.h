@@ -8,6 +8,8 @@
 
 #include "wit_types.h"
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -160,13 +162,24 @@ WitResult WitCuePlayer_GetSequentialIndex(WitCuePlayerHn player, uint32_t* out_i
  * ===================================================================== */
 
 /**
- * @brief Voice の再生状況を受け取ります。
- * @param voice Play 時に発行された有効な WitVoiceHn。
- * @param out_status Voice の再生状況を受け取る。
- * @retval WIT_RESULT_SUCCESS 成功時。
- * @retval その他 エラー。
+ * @brief Voice の現在の再生状況を返します。
+ * @param voice Play 時に発行された WitVoiceHn。
+ * @retval WitPlaybackStatus 現在の状態。無効ハンドルの場合は WIT_PLAYBACK_STATUS_IDLE。
+ * @note 無効ハンドルは IDLE として扱われます。
+ *       Pause/Resume のトグルなど、状態に応じた分岐に使用してください。
  */
-WitResult WitVoice_GetStatus(WitVoiceHn voice, WitPlaybackStatus* out_status);
+WitPlaybackStatus WitVoice_GetStatus(WitVoiceHn voice);
+
+/**
+ * @brief Voice が生存中（PLAYING / PENDING / PAUSED）なら true を返します。
+ * @param voice Play 時に発行された WitVoiceHn。
+ * @retval true  再生セッションが継続中（一時停止含む）。
+ * @retval false IDLE / STOPPING / FINISHED、または無効ハンドル。
+ *
+ * @note BGM のように「鳴っていなければ鳴らす」用途を想定した判定関数です。
+ *       細かい状態が必要な場合は WitVoice_GetStatus を使用してください。
+ */
+bool WitVoice_IsActive(WitVoiceHn voice);
 
 /**
  * @brief Voice を一時停止します。

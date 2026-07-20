@@ -137,9 +137,14 @@ WitResult WitCuePlayer_GetSequentialIndex(WitCuePlayerHn player, uint32_t* out_i
  * Voice
  * ===================================================================== */
 
-WitResult WitVoice_GetStatus(WitVoiceHn voice, WitPlaybackStatus* out_status) {
-    if (!g_engine) return WIT_RESULT_INIT_FAILED;
-    return g_engine->VoiceGetStatus(voice, out_status);
+WitPlaybackStatus WitVoice_GetStatus(WitVoiceHn voice) {
+    if (!g_engine) return WIT_PLAYBACK_STATUS_IDLE;
+    return g_engine->VoiceGetStatus(voice);
+}
+
+bool WitVoice_IsActive(WitVoiceHn voice) {
+	if (!g_engine) return WIT_RESULT_INIT_FAILED;
+	return g_engine->VoiceIsActive(voice);
 }
 
 WitResult WitVoice_Pause(WitVoiceHn voice) {
