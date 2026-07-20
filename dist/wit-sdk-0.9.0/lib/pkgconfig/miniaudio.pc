@@ -1,0 +1,15 @@
+prefix=C:/_Development/audio-dev/wit/dist/wit-sdk-0.9.0
+exec_prefix=${prefix}
+includedir=${prefix}/include
+libdir=${exec_prefix}/lib
+
+Name: miniaudio
+Description: An audio playback and capture library.
+URL: https://miniaud.io/
+License: Unlicense OR MIT-0
+Version: 0.11.25
+
+Requires.private: 
+Cflags: -I${includedir} 
+Libs: -L${libdir} -lminiaudio
+Libs.private: 
