@@ -6,12 +6,17 @@ set(PROJ_CODE  "wit")  # complete name: wit middleware
 set(MYLIB_CODE "wit")  # complete name: wit audio system (Runtime)
 
 project(${PROJ_CODE}
-        VERSION     0.1
+        VERSION     0.9.0
         LANGUAGES   CXX
         DESCRIPTION "Educational sound middleware for student game development"
 )
 
 enable_testing()
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX
+            "${CMAKE_SOURCE_DIR}/dist/wit-sdk-${PROJECT_VERSION}"
+            CACHE PATH "Distribution staging directory" FORCE)
+endif()
 
 # Fetch third-party data first
 add_subdirectory(external)
