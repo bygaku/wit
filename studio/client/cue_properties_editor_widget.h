@@ -26,6 +26,7 @@ public:
 
 	std::function<void()> on_changed;
     std::function<std::filesystem::path()> project_dir_provider;
+    std::function<bool(const QString& new_name)> name_change_requester;
 
     /**
      * @brief Bind the form to a cue (nullptr clears and disables the form).
@@ -40,16 +41,13 @@ private:
     void AddWaveformFiles();
     void RemoveSelectedWaveform();
 
-    CueModel* cue_     = nullptr;
-    bool      loading_ = false;
-
-    QLineEdit*      name_edit_        = nullptr;
-    QComboBox*      category_combo_   = nullptr;
-    QComboBox*      cue_type_combo_  = nullptr;
-    QCheckBox*      loop_check_       = nullptr;
-    QComboBox*      streaming_combo_  = nullptr;
-    QDoubleSpinBox* volume_spin_      = nullptr;
-    QDoubleSpinBox* pitch_spin_       = nullptr;
+    QLineEdit*      name_edit_        	 = nullptr;
+    QComboBox*      category_combo_   	 = nullptr;
+    QComboBox*      cue_type_combo_		 = nullptr;
+    QCheckBox*      loop_check_       	 = nullptr;
+    QComboBox*      streaming_combo_  	 = nullptr;
+    QDoubleSpinBox* volume_spin_      	 = nullptr;
+    QDoubleSpinBox* pitch_spin_       	 = nullptr;
     QGroupBox*      volume_random_group_ = nullptr;
     QDoubleSpinBox* volume_random_min_   = nullptr;
     QDoubleSpinBox* volume_random_max_   = nullptr;
@@ -57,6 +55,9 @@ private:
     QDoubleSpinBox* pitch_random_min_    = nullptr;
     QDoubleSpinBox* pitch_random_max_    = nullptr;
     QListWidget*    waveform_list_       = nullptr;
+
+    CueModel* cue_     = nullptr;
+    bool      loading_ = false;
 };
 
 }

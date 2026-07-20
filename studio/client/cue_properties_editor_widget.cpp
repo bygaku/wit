@@ -19,11 +19,6 @@ namespace {
 
 /* =====================================================================
  * Recommended randomize ranges
- *
- * Inserted the first time the user turns a randomize group on, so that
- * enabling it alone gives an audible, natural variation without forcing
- * anyone to reason about min/max. A group that already holds a user-authored
- * range (anything other than the flat 1.0 default) is left untouched.
  * ===================================================================== */
 constexpr float RECOMMENDED_VOLUME_MIN = 0.8f;
 constexpr float RECOMMENDED_VOLUME_MAX = 1.0f;
@@ -216,10 +211,20 @@ void CuePropertiesEditorWidget::BuildLayout() {
 		LoadFromCue();
 	};
 
-	connect(name_edit_, &QLineEdit::textEdited, this, [this](const QString& text) {
+	connect(name_edit_, &QLineEdit::editingFinished, this, [this]() {
 		if (loading_ || cue_ == nullptr) return;
-		cue_->cue_name = text.toStdString();
-		if (on_changed) on_changed();
+
+		const QString proposed = name_edit_->text().trimmed();
+		if (proposed.toStdString() == cue_->cue_name) return;	///< no change
+
+		bool accepted = false;
+		if (name_change_requester) accepted = name_change_requester(proposed);
+
+		if (!accepted) {
+			loading_ = true;
+			name_edit_->setText(QString::fromStdString(cue_->cue_name));
+			loading_ = false;
+		}
 	});
 
 	connect(category_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {

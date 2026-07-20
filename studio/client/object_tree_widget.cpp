@@ -3,17 +3,12 @@
 #include <QContextMenuEvent>
 #include <QHeaderView>
 #include <QMenu>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <QInputDialog>
 
 namespace wit::studio {
-
-namespace {
-constexpr int ROLE_COLLECTION_INDEX = Qt::UserRole + 1;
-constexpr int ROLE_CUE_INDEX        = Qt::UserRole + 2;
-constexpr int ROLE_WAVEFORM_INDEX   = Qt::UserRole + 3;
-}  // namespace
 
 ObjectTreeWidget::ObjectTreeWidget(QWidget* parent) : QWidget(parent) {
 	BuildLayout();
@@ -28,7 +23,7 @@ void ObjectTreeWidget::BuildLayout() {
 
 	{
 		m_tree_widget_ = new QTreeWidget(this);
-		m_tree_widget_->setHeaderLabel("プロジェクト");
+		m_tree_widget_->setHeaderLabel("プロジェクトツリー");
 		m_tree_widget_->setColumnCount(1);
 		m_tree_widget_->header()->setStretchLastSection(true);
 		m_tree_widget_->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -47,20 +42,29 @@ void ObjectTreeWidget::BuildLayout() {
 		if (item == nullptr || !onItemRenamed) return;
 		onItemRenamed(item, item->text(0));
 	});
+
+	auto* delete_shortcut = new QShortcut(QKeySequence::Delete, this);
+	delete_shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+	connect(delete_shortcut, &QShortcut::activated, this, [this]() {
+		QTreeWidgetItem* item = m_tree_widget_->currentItem();
+		if (item != nullptr && onDeleteItemRequested) {
+			onDeleteItemRequested(item);
+		}
+	});
 }
 
 /* =====================================================================
  * Add item into tree
  * ===================================================================== */
-QTreeWidgetItem* ObjectTreeWidget::AddCueCollectionIntoTree(const QString& name) {
-	// Add a CC into TreeWidget
-	auto* item = new QTreeWidgetItem(m_tree_widget_, ItemType::CueCollection);
+QTreeWidgetItem* ObjectTreeWidget::AddCueCollectionIntoProject(const QString& name) {
+	if (m_project_item_ == nullptr) return nullptr;
+
+	// Add a CC under the project root
+	auto* item = new QTreeWidgetItem(m_project_item_, ItemType::CueCollection);
 	item->setText(0, name);
 	item->setFlags(item->flags() | Qt::ItemIsEditable);
 
-	const int collection_index = m_tree_widget_->indexOfTopLevelItem(item);
-	item->setData(0, ROLE_COLLECTION_INDEX, collection_index);
-
+	m_project_item_->setExpanded(true);
 	item->setExpanded(true);
 	return item;
 }
@@ -73,47 +77,61 @@ QTreeWidgetItem* ObjectTreeWidget::AddCueIntoCueCollection(QTreeWidgetItem* pare
 	item->setText(0, name);
 	item->setFlags(item->flags() | Qt::ItemIsEditable);
 
-	const int collection_index = parent_collection->data(0, ROLE_COLLECTION_INDEX).toInt();
-	const int cue_index = parent_collection->indexOfChild(item);
-	item->setData(0, ROLE_COLLECTION_INDEX, collection_index);
-	item->setData(0, ROLE_CUE_INDEX, cue_index);
-
 	parent_collection->setExpanded(true);
 	return item;
 }
 
-int ObjectTreeWidget::TopLevelIndexOf(QTreeWidgetItem* item) const {
-	// indexOfTopLevelItem returns -1 for non-top-level items, which is exactly
-	// the "not a collection" signal the host expects.
-	return m_tree_widget_->indexOfTopLevelItem(item);
+QTreeWidgetItem* ObjectTreeWidget::ResetWithProject(const QString& project_name) {
+	const QSignalBlocker blocker(m_tree_widget_);
+	m_tree_widget_->clear();
+
+	m_project_item_ = new QTreeWidgetItem(m_tree_widget_, ItemType::Project);
+	m_project_item_->setText(0, project_name);
+	m_project_item_->setFlags(m_project_item_->flags() & ~Qt::ItemIsEditable);
+	m_project_item_->setExpanded(true);
+
+	return m_project_item_;
+}
+
+void ObjectTreeWidget::SetProjectLabel(const QString& project_name) {
+	if (m_project_item_ == nullptr) return;
+	SetItemTextSilently(m_project_item_, project_name);
+}
+
+QTreeWidgetItem* ObjectTreeWidget::CollectionItemAt(int index) const {
+	if (m_project_item_ == nullptr) return nullptr;
+	if (index < 0 || index >= m_project_item_->childCount()) return nullptr;
+	return m_project_item_->child(index);
+}
+
+QTreeWidgetItem* ObjectTreeWidget::CueItemAt(int collection_index, int cue_index) const {
+	QTreeWidgetItem* collection = CollectionItemAt(collection_index);
+	if (collection == nullptr) return nullptr;
+	if (cue_index < 0 || cue_index >= collection->childCount()) return nullptr;
+	return collection->child(cue_index);
+}
+
+void ObjectTreeWidget::RemoveItem(QTreeWidgetItem* item) {
+	if (item == nullptr || item == m_project_item_) return;	///< the root is permanent
+	const QSignalBlocker blocker(m_tree_widget_);
+
+	if (QTreeWidgetItem* parent = item->parent()) {
+		parent->removeChild(item);
+	} else {
+		const int index = m_tree_widget_->indexOfTopLevelItem(item);
+		if (index >= 0) m_tree_widget_->takeTopLevelItem(index);
+	}
+
+	delete item;
+}
+
+int ObjectTreeWidget::CollectionIndexOf(QTreeWidgetItem* item) const {
+	if (m_project_item_ == nullptr || item == nullptr) return -1;
+	return m_project_item_->indexOfChild(item);
 }
 
 void ObjectTreeWidget::CurrentSelection(int& out_collection, int& out_cue) const {
-	out_collection	= -1;
-	out_cue			= -1;
-
-	auto* item = m_tree_widget_->currentItem();
-	if (item == nullptr) return;
-
-	if (item->type() == ItemType::CueCollection) {
-		out_collection = m_tree_widget_->indexOfTopLevelItem(item);
-		return;
-	}
-
-	if (item->type() == ItemType::Cue) {
-		QTreeWidgetItem* parent = item->parent();
-		if (parent == nullptr) return;
-
-		out_collection = m_tree_widget_->indexOfTopLevelItem(parent);
-		out_cue        = parent->indexOfChild(item);
-	}
-}
-
-void ObjectTreeWidget::Clear() {
-	// Suppress currentItemChanged while tearing the tree down; otherwise the
-	// host's selection handler runs against a model that is mid-rebuild.
-	const QSignalBlocker blocker(m_tree_widget_);
-	m_tree_widget_->clear();
+	ResolveItem(m_tree_widget_->currentItem(), out_collection, out_cue);
 }
 
 void ObjectTreeWidget::ResolveItem(QTreeWidgetItem* item, int& out_collection, int& out_cue) const {
@@ -123,7 +141,7 @@ void ObjectTreeWidget::ResolveItem(QTreeWidgetItem* item, int& out_collection, i
 	if (item == nullptr) return;
 
 	if (item->type() == ItemType::CueCollection) {
-		out_collection = m_tree_widget_->indexOfTopLevelItem(item);
+		out_collection = CollectionIndexOf(item);
 		return;
 	}
 
@@ -131,15 +149,13 @@ void ObjectTreeWidget::ResolveItem(QTreeWidgetItem* item, int& out_collection, i
 		QTreeWidgetItem* parent = item->parent();
 		if (parent == nullptr) return;
 
-		out_collection = m_tree_widget_->indexOfTopLevelItem(parent);
+		out_collection = CollectionIndexOf(parent);
 		out_cue        = parent->indexOfChild(item);
 	}
 }
 
 void ObjectTreeWidget::SetItemTextSilently(QTreeWidgetItem* item, const QString& text) {
 	if (item == nullptr) return;
-
-	// Reverting a rejected edit must not re-enter the itemChanged handler.
 	const QSignalBlocker blocker(m_tree_widget_);
 	item->setText(0, text);
 }
@@ -162,10 +178,22 @@ void ObjectTreeWidget::contextMenuEvent(QContextMenuEvent* event) {
 		return;
 	}
 
+	// On the project root
+	if (item->type() == ItemType::Project) {
+		QAction* add_collection = menu.addAction("キューコレクションを追加");
+		connect(add_collection, &QAction::triggered, this, [this]() {
+			if (onAddCueCollectionRequested) onAddCueCollectionRequested();
+		});
+		menu.exec(event->globalPos());
+		return;
+	}
+
 	// On a collection
 	if (item->type() == ItemType::CueCollection) {
 		QAction* add_cue	  = menu.addAction("キューを追加");
 		QAction* edit_cc_name = menu.addAction("コレクションの名前を変更");
+		menu.addSeparator();
+		QAction* delete_cc    = menu.addAction("コレクションを削除");
 
 		connect(add_cue, &QAction::triggered, this, [this, item]() {
 			if (onAddCueRequested) onAddCueRequested(item);
@@ -187,6 +215,19 @@ void ObjectTreeWidget::contextMenuEvent(QContextMenuEvent* event) {
 					  onEditCueCollectionNameRequested(item, new_name);
 				  }
 		  	}
+		});
+
+		connect(delete_cc, &QAction::triggered, this, [this, item]() {
+			if (onDeleteItemRequested) onDeleteItemRequested(item);
+		});
+	}
+
+	// On a cue
+	if (item->type() == ItemType::Cue) {
+		QAction* delete_cue = menu.addAction("キューを削除");
+
+		connect(delete_cue, &QAction::triggered, this, [this, item]() {
+			if (onDeleteItemRequested) onDeleteItemRequested(item);
 		});
 	}
 

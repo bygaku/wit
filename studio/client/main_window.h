@@ -13,7 +13,9 @@ namespace wit::studio {
 
 class ObjectTreeWidget;
 class ProjectPropertiesEditorWidget;
+class CueCollectionPropertiesEditorWidget;
 class CuePropertiesEditorWidget;
+class IssueListWidget;
 
 /**
  * @class MainWindow
@@ -57,14 +59,15 @@ private:
     void AddCollection();
     void AddCue(QTreeWidgetItem* parent_collection = nullptr);
     void DeleteSelectedItem();
+	void OnDeleteItemRequested(QTreeWidgetItem* item);
 	void Reset() {};
     void OpenCategoryEditor();
 	void OpenWaveformViewer() {};	///< This method not be implemented in v1.0.0.
-
-	/**
-	 * @brief Rename the collection bound to a tree item, keeping the model in sync.
-	 */
 	void RenameCollection(QTreeWidgetItem* item, const QString& new_name);
+	bool RenameSelectedCollection(const QString& new_name);
+	bool RenameSelectedCue(const QString& new_name);
+	bool ApplyCollectionRename(int collection_index, const std::string& new_name);
+	bool ApplyCueRename(int collection_index, int cue_index, const std::string& new_name);
 
 	/**
 	 * @brief Handle an in-place rename from the tree (F2 / double-click).
@@ -86,6 +89,11 @@ private:
 	 * @brief Swap the right-hand inspector to match the current tree selection.
 	 */
 	void OnTreeSelectionChanged(int item_type, const QString& name);
+
+	/**
+	 * @brief Re-bind whichever page is showing, after out-of-band model edits.
+	 */
+	void RefreshInspector();
 
     /* =====================================================================
      * Build
@@ -125,10 +133,12 @@ private:
 	void UpdateWindowTitle();
 
 private:
-	ObjectTreeWidget* 				object_tree_				= nullptr;
-	QStackedWidget*	  				inspector_view_				= nullptr;
-	ProjectPropertiesEditorWidget*	project_properties_editor_	= nullptr;
-	CuePropertiesEditorWidget*		cue_properties_editor_		= nullptr;
+	ObjectTreeWidget* 						object_tree_						= nullptr;
+	QStackedWidget*	  						inspector_view_						= nullptr;
+	ProjectPropertiesEditorWidget*			project_properties_editor_			= nullptr;
+	CueCollectionPropertiesEditorWidget*	cue_collection_properties_editor_	= nullptr;
+	CuePropertiesEditorWidget*				cue_properties_editor_				= nullptr;
+	IssueListWidget*						issue_list_							= nullptr;
 
 	ProjectModel      		project_;
 	std::filesystem::path	current_path_;			///< Backing .wsp path, empty if never saved

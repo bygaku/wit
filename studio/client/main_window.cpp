@@ -10,31 +10,44 @@
 #include <QLabel>
 #include <QPalette>
 #include <QStackedWidget>
+#include <QProgressDialog>
 
 #include "project_serializer.h"
+#include "project_builder.h"
 
 #include "object_tree_widget.h"
 #include "cue_properties_editor_widget.h"
+#include "cue_collection_properties_editor_widget.h"
 #include "project_properties_editor_widget.h"
+#include "category_editor_dialog.h"
+#include "issue_list_widget.h"
 
 namespace {
-constexpr auto	WINDOW_WIDTH  		= 1080;
-constexpr auto	WINDOW_HEIGHT 		=  720;
+constexpr auto	WINDOW_WIDTH  		= 1400;
+constexpr auto	WINDOW_HEIGHT 		= 1050;
 constexpr auto	LEFT_WIDTH_RATIO	= 2;
 constexpr auto	RIGHT_WIDTH_RATIO 	= 5;
-constexpr auto	TOP_HEIGHT_RATIO	= 1;
+constexpr auto	TOP_HEIGHT_RATIO	= 3;
+
+
+#ifdef VERSION_RELEASE_1_0
 constexpr auto	BOTTOM_HEIGHT_RATIO = 3;
+#else
+constexpr auto	BOTTOM_HEIGHT_RATIO = 1;
+#endif
 
 constexpr auto	PROJECT_FILE_FILTER = "WitStudio Project (*.wsp)";
 constexpr auto	PROJECT_FILE_SUFFIX = "wsp";
+constexpr auto	BUILD_OUTPUT_DIR    = "wit_assets";
 
 /**
  * @brief Inspector stack page order.
  */
 enum InspectorPage {
-	PAGE_EMPTY   = 0,	///< Nothing selected on the tree
-	PAGE_PROJECT = 1,	///< Project / collection selected
-	PAGE_CUE     = 2,	///< Cue selected
+	PAGE_EMPTY      = 0,	///< Nothing selected on the tree
+	PAGE_PROJECT    = 1,	///< Project selected
+	PAGE_COLLECTION = 2,	///< Cue collection selected
+	PAGE_CUE        = 3,	///< Cue selected
 };
 }
 
@@ -47,6 +60,7 @@ MainWindow::MainWindow() {
 
 	BuildMenus();
 	BuildBodyLayout();
+	RebuildTreeFromProject();
 	UpdateWindowTitle();
 }
 
@@ -79,6 +93,22 @@ void MainWindow::BuildMenus() {
 	auto* quit_action = file_menu->addAction("終了(&Q)");
 	quit_action->setShortcut(QKeySequence::Quit);
 	connect(quit_action, &QAction::triggered, this, [this]() { close(); });
+
+	auto* edit_menu = menuBar()->addMenu("編集(&E)");
+
+	auto* delete_action = edit_menu->addAction("選択項目を削除(&D)");
+	connect(delete_action, &QAction::triggered, this, [this]() { DeleteSelectedItem(); });
+
+	edit_menu->addSeparator();
+
+	auto* category_action = edit_menu->addAction("カテゴリを編集(&C)...");
+	connect(category_action, &QAction::triggered, this, [this]() { OpenCategoryEditor(); });
+
+	auto* build_menu = menuBar()->addMenu("ビルド(&B)");
+
+	auto* build_action = build_menu->addAction("プロジェクトをビルド(&B)");
+	build_action->setShortcut(QKeySequence("F7"));
+	connect(build_action, &QAction::triggered, this, [this]() { RunBuild(); });
 }
 
 void MainWindow::BuildBodyLayout() {
@@ -110,6 +140,10 @@ void MainWindow::BuildBodyLayout() {
 			OnItemRenamed(item, new_name);
 		};
 
+		object_tree_->onDeleteItemRequested = [this](QTreeWidgetItem* item) {
+			OnDeleteItemRequested(item);
+		};
+
 		horizontal_split->addWidget(object_tree_);
 	}
 
@@ -127,13 +161,30 @@ void MainWindow::BuildBodyLayout() {
 
 		project_properties_editor_ = new ProjectPropertiesEditorWidget(inspector_view_);
 		project_properties_editor_->on_changed = [this]() {
+			object_tree_->SetProjectLabel(QString::fromStdString(project_.project_name));
 			MarkDirty();
+			UpdateWindowTitle();
 		};
 		inspector_view_->addWidget(project_properties_editor_);
+
+		cue_collection_properties_editor_ = new CueCollectionPropertiesEditorWidget(inspector_view_);
+		cue_collection_properties_editor_->on_changed = [this]() {
+			MarkDirty();
+		};
+		cue_collection_properties_editor_->name_change_requester = [this](const QString& new_name) -> bool {
+			return RenameSelectedCollection(new_name);
+		};
+		inspector_view_->addWidget(cue_collection_properties_editor_);
 
 		cue_properties_editor_ = new CuePropertiesEditorWidget(inspector_view_);
 		cue_properties_editor_->on_changed = [this]() {
 			MarkDirty();
+		};
+		cue_properties_editor_->project_dir_provider = [this]() -> std::filesystem::path {
+			return current_path_.empty() ? std::filesystem::path() : current_path_.parent_path();
+		};
+		cue_properties_editor_->name_change_requester = [this](const QString& new_name) -> bool {
+			return RenameSelectedCue(new_name);
 		};
 		inspector_view_->addWidget(cue_properties_editor_);
 
@@ -145,17 +196,11 @@ void MainWindow::BuildBodyLayout() {
 	}
 
 	// Body bottom
-	auto bottom_widget = new QWidget(this);
-	{
-		bottom_widget->setAutoFillBackground(true);
-		palette = bottom_widget->palette();
-		palette.setColor(QPalette::Window, QColor("#0000ff"));
-		bottom_widget->setPalette(palette);
-	}
+	issue_list_ = new IssueListWidget(this);
 
 	{
 		vertical_split->addWidget(horizontal_split);
-		vertical_split->addWidget(bottom_widget);
+		vertical_split->addWidget(issue_list_);
 		vertical_split->setStretchFactor(0, TOP_HEIGHT_RATIO);
 		vertical_split->setStretchFactor(1, BOTTOM_HEIGHT_RATIO);
 	}
@@ -200,7 +245,6 @@ void MainWindow::OpenProject() {
 }
 
 bool MainWindow::SaveProject() {
-	// Fall back to Save As when the project has never been written to disk.
 	if (current_path_.empty()) {
 		return SaveProjectAs();
 	}
@@ -280,18 +324,18 @@ void MainWindow::AddCollection() {
 		taken.push_back(col.name);
 	}
 
-	const std::string name = MakeUniqueName("新規CueCollection", taken);
+	const auto name = MakeUniqueName("新規CueCollection", taken);
 
 	project_.cue_collections.push_back(ProjectSerializer::MakeNewCollection(name));
 
-	object_tree_->AddCueCollectionIntoTree(QString::fromStdString(name));
+	object_tree_->AddCueCollectionIntoProject(QString::fromStdString(name));
 	MarkDirty();
 }
 
 void MainWindow::AddCue(QTreeWidgetItem* parent_collection) {
 	if (object_tree_ == nullptr || parent_collection == nullptr) return;	///< CueCollection does not exist
 
-	const int collection_index = object_tree_->TopLevelIndexOf(parent_collection);
+	const int collection_index = object_tree_->CollectionIndexOf(parent_collection);
 	if (collection_index < 0 ||	collection_index >= static_cast<int>(project_.cue_collections.size())) return;
 
 	CueCollectionModel& collection = project_.cue_collections[collection_index];
@@ -313,27 +357,90 @@ void MainWindow::AddCue(QTreeWidgetItem* parent_collection) {
 
 void MainWindow::RenameCollection(QTreeWidgetItem* item, const QString& new_name) {
 	if (object_tree_ == nullptr || item == nullptr) return;
-	if (new_name.isEmpty()) return;
 
-	const int collection_index = object_tree_->TopLevelIndexOf(item);
-	if (collection_index < 0 ||	collection_index >= static_cast<int>(project_.cue_collections.size())) return;
+	const int collection_index = object_tree_->CollectionIndexOf(item);
+	ApplyCollectionRename(collection_index, new_name.trimmed().toStdString());
+}
 
-	const std::string trimmed = new_name.trimmed().toStdString();
-	if (trimmed.empty()) return;
+bool MainWindow::RenameSelectedCollection(const QString& new_name) {
+	if (object_tree_ == nullptr) return false;
 
-	// Reject a clash with another collection; names become output file stems.
+	int collection_index;
+	int cue_index;
+	object_tree_->CurrentSelection(collection_index, cue_index);
+	if (cue_index >= 0) return false;
+
+	return ApplyCollectionRename(collection_index, new_name.trimmed().toStdString());
+}
+
+bool MainWindow::RenameSelectedCue(const QString& new_name) {
+	if (object_tree_ == nullptr) return false;
+
+	int collection_index;
+	int cue_index;
+	object_tree_->CurrentSelection(collection_index, cue_index);
+	if (cue_index < 0) return false;	///< no cue is selected
+
+	return ApplyCueRename(collection_index, cue_index, new_name.trimmed().toStdString());
+}
+
+bool MainWindow::ApplyCollectionRename(int collection_index, const std::string& new_name) {
+	if (collection_index < 0 || collection_index >= static_cast<int>(project_.cue_collections.size())) {
+		return false;
+	}
+
+	CueCollectionModel& collection = project_.cue_collections[collection_index];
+	if (new_name == collection.name) return true;	///< no change
+	if (new_name.empty()) return false;
+
 	for (std::size_t itr = 0; itr < project_.cue_collections.size(); ++itr) {
 		if (static_cast<int>(itr) == collection_index) continue;
-		if (project_.cue_collections[itr].name == trimmed) {
+		if (project_.cue_collections[itr].name == new_name) {
 			QMessageBox::warning(this, "名前を変更",
 				"同じ名前のキューコレクションが既に存在します。");
-			return;
+			return false;
 		}
 	}
 
-	project_.cue_collections[collection_index].name = trimmed;
-	object_tree_->SetItemTextSilently(item, QString::fromStdString(trimmed));
+	collection.name = new_name;
+
+	if (QTreeWidgetItem* item = object_tree_->CollectionItemAt(collection_index)) {
+		object_tree_->SetItemTextSilently(item, QString::fromStdString(new_name));
+	}
+
 	MarkDirty();
+	return true;
+}
+
+bool MainWindow::ApplyCueRename(int collection_index, int cue_index, const std::string& new_name) {
+	if (collection_index < 0 || collection_index >= static_cast<int>(project_.cue_collections.size())) {
+		return false;
+	}
+
+	CueCollectionModel& collection = project_.cue_collections[collection_index];
+	if (cue_index < 0 || cue_index >= static_cast<int>(collection.cues.size())) return false;
+
+	CueModel& cue = collection.cues[cue_index];
+	if (new_name == cue.cue_name) return true;	///< no change
+	if (new_name.empty()) return false;
+
+	for (std::size_t itr = 0; itr < collection.cues.size(); ++itr) {
+		if (static_cast<int>(itr) == cue_index) continue;
+		if (collection.cues[itr].cue_name == new_name) {
+			QMessageBox::warning(this, "名前を変更",
+				"同じ名前のキューが既に存在します。");
+			return false;
+		}
+	}
+
+	cue.cue_name = new_name;
+
+	if (QTreeWidgetItem* item = object_tree_->CueItemAt(collection_index, cue_index)) {
+		object_tree_->SetItemTextSilently(item, QString::fromStdString(new_name));
+	}
+
+	MarkDirty();
+	return true;
 }
 
 void MainWindow::OnItemRenamed(QTreeWidgetItem* item, const QString& new_name) {
@@ -347,58 +454,21 @@ void MainWindow::OnItemRenamed(QTreeWidgetItem* item, const QString& new_name) {
 		return;
 	}
 
-	CueCollectionModel& collection = project_.cue_collections[collection_index];
-	const std::string   trimmed    = new_name.trimmed().toStdString();
+	const auto trimmed = new_name.trimmed().toStdString();
 
-	// --- Cue rename ---
 	if (cue_index >= 0) {
-		if (cue_index >= static_cast<int>(collection.cues.size())) return;
-
-		CueModel& cue = collection.cues[cue_index];
-		if (trimmed == cue.cue_name) return;	///< no change
-
-		if (trimmed.empty()) {
-			object_tree_->SetItemTextSilently(item, QString::fromStdString(cue.cue_name));
-			return;
+		if (cue_index >= static_cast<int>(project_.cue_collections[collection_index].cues.size())) return;
+		if (!ApplyCueRename(collection_index, cue_index, trimmed)) {
+			const auto& current = project_.cue_collections[collection_index].cues[cue_index].cue_name;
+			object_tree_->SetItemTextSilently(item, QString::fromStdString(current));
 		}
-
-		// Reject a name already taken by a sibling cue.
-		for (std::size_t itr = 0; itr < collection.cues.size(); ++itr) {
-			if (static_cast<int>(itr) == cue_index) continue;
-			if (collection.cues[itr].cue_name == trimmed) {
-				QMessageBox::warning(this, "名前を変更",
-					"同じ名前のキューが既に存在します。");
-				object_tree_->SetItemTextSilently(item, QString::fromStdString(cue.cue_name));
-				return;
-			}
-		}
-
-		cue.cue_name = trimmed;
-		MarkDirty();
 		return;
 	}
 
-	// --- CueCollection rename ---
-	if (trimmed == collection.name) return;	///< no change
-
-	if (trimmed.empty()) {
-		object_tree_->SetItemTextSilently(item, QString::fromStdString(collection.name));
-		return;
+	if (!ApplyCollectionRename(collection_index, trimmed)) {
+		const auto& current = project_.cue_collections[collection_index].name;
+		object_tree_->SetItemTextSilently(item, QString::fromStdString(current));
 	}
-
-	// Collection names become output file stems, so a clash is fatal at build.
-	for (std::size_t itr = 0; itr < project_.cue_collections.size(); ++itr) {
-		if (static_cast<int>(itr) == collection_index) continue;
-		if (project_.cue_collections[itr].name == trimmed) {
-			QMessageBox::warning(this, "名前を変更",
-				"同じ名前のキューコレクションが既に存在します。");
-			object_tree_->SetItemTextSilently(item, QString::fromStdString(collection.name));
-			return;
-		}
-	}
-
-	collection.name = trimmed;
-	MarkDirty();
 }
 
 std::string MainWindow::MakeUniqueName(const std::string& base, const std::vector<std::string>& taken) {
@@ -424,8 +494,8 @@ void MainWindow::OnTreeSelectionChanged(int item_type, const QString& /*name*/) 
 	int cue_index;
 	object_tree_->CurrentSelection(collection_index, cue_index);	///< Current Selection on the tree
 
+	// Cue properties editor.
 	if (item_type == ObjectTreeWidget::Cue) {
-		// A cue is selected: resolve it and bind the cue editor.
 		if (collection_index < 0 || collection_index >= static_cast<int>(project_.cue_collections.size())) {
 			inspector_view_->setCurrentIndex(PAGE_EMPTY);
 			return;
@@ -439,21 +509,142 @@ void MainWindow::OnTreeSelectionChanged(int item_type, const QString& /*name*/) 
 
 		cue_properties_editor_->Bind(&collection.cues[cue_index], project_.categories);
 		inspector_view_->setCurrentIndex(PAGE_CUE);
+		return;
+	}
+
+	// CC properties editor.
+	if (item_type == ObjectTreeWidget::CueCollection) {
+		// A collection is selected: bind its dedicated page.
+		if (collection_index < 0 || collection_index >= static_cast<int>(project_.cue_collections.size())) {
+			inspector_view_->setCurrentIndex(PAGE_EMPTY);
+			return;
+		}
+
+		cue_collection_properties_editor_->Bind(&project_.cue_collections[collection_index]);
+		inspector_view_->setCurrentIndex(PAGE_COLLECTION);
+		return;
+	}
+
+	// Project properties editor.
+	if (item_type == ObjectTreeWidget::Project) {
+		project_properties_editor_->Bind(&project_);
+		inspector_view_->setCurrentIndex(PAGE_PROJECT);
+		return;
+	}
+
+	inspector_view_->setCurrentIndex(PAGE_EMPTY);
+}
+
+void MainWindow::RefreshInspector() {
+	if (inspector_view_ == nullptr) return;
+
+	int collection_index;
+	int cue_index;
+	object_tree_->CurrentSelection(collection_index, cue_index);
+
+	switch (inspector_view_->currentIndex()) {
+		case PAGE_PROJECT: {
+			project_properties_editor_->Bind(&project_);
+			break;
+		}
+		case PAGE_COLLECTION: {
+			if (collection_index >= 0 && collection_index < static_cast<int>(project_.cue_collections.size())) {
+				cue_collection_properties_editor_->Bind(&project_.cue_collections[collection_index]);
+			} else {
+				inspector_view_->setCurrentIndex(PAGE_EMPTY);
+			}
+			break;
+		}
+		case PAGE_CUE: {
+			if (collection_index >= 0 && collection_index < static_cast<int>(project_.cue_collections.size())) {
+				CueCollectionModel& collection = project_.cue_collections[collection_index];
+				if (cue_index >= 0 && cue_index < static_cast<int>(collection.cues.size())) {
+					cue_properties_editor_->Bind(&collection.cues[cue_index], project_.categories);
+					break;
+				}
+			}
+			inspector_view_->setCurrentIndex(PAGE_EMPTY);
+			break;
+		}
+		default:
+			break;
+	}
+}
+
+void MainWindow::DeleteSelectedItem() {
+	if (object_tree_ == nullptr) return;
+
+	int collection_index;
+	int cue_index;
+	object_tree_->CurrentSelection(collection_index, cue_index);
+	if (collection_index < 0) return;
+
+	QTreeWidgetItem* item = (cue_index >= 0)
+		? object_tree_->CueItemAt(collection_index, cue_index)
+		: object_tree_->CollectionItemAt(collection_index);
+
+	OnDeleteItemRequested(item);
+}
+
+void MainWindow::OnDeleteItemRequested(QTreeWidgetItem* item) {
+	if (object_tree_ == nullptr || item == nullptr) return;
+
+	int collection_index;
+	int cue_index;
+	object_tree_->ResolveItem(item, collection_index, cue_index);
+	if (collection_index < 0 || collection_index >= static_cast<int>(project_.cue_collections.size())) return;
+
+	CueCollectionModel& collection = project_.cue_collections[collection_index];
+
+	// Delete cue.
+	if (cue_index >= 0) {
+		if (cue_index >= static_cast<int>(collection.cues.size())) return;
+
+		const auto cue_name = QString::fromStdString(collection.cues[cue_index].cue_name);
+		const auto choice = QMessageBox::question(
+			this, "キューを削除",
+			QString("キュー「%1」を削除しますか？\nこの操作は元に戻せません。").arg(cue_name),
+			QMessageBox::Yes | QMessageBox::No,
+			QMessageBox::No);
+		if (choice != QMessageBox::Yes) return;
+
+		inspector_view_->setCurrentIndex(PAGE_EMPTY);
+
+		collection.cues.erase(collection.cues.begin() + cue_index);
+		object_tree_->RemoveItem(item);
+		MarkDirty();
 
 		return;
 	}
 
-	// A collection (or anything else) shows the project-wide settings.
-	project_properties_editor_->Bind(&project_);
-	inspector_view_->setCurrentIndex(PAGE_PROJECT);
-}
+	// Delete CC.
+	{
+		const auto col_name = QString::fromStdString(collection.name);
+		const auto choice = QMessageBox::question(
+			this, "コレクションを削除",
+			QString("コレクション「%1」と、その中のすべてのキュー (%2 個) を削除しますか？\n"
+					"この操作は元に戻せません。")
+				.arg(col_name)
+				.arg(collection.cues.size()),
+			QMessageBox::Yes | QMessageBox::No,
+			QMessageBox::No);
+		if (choice != QMessageBox::Yes) return;
+	}
 
-void MainWindow::DeleteSelectedItem() {
+	inspector_view_->setCurrentIndex(PAGE_EMPTY);
 
+	project_.cue_collections.erase(project_.cue_collections.begin() + collection_index);
+	object_tree_->RemoveItem(item);
+	MarkDirty();
 }
 
 void MainWindow::OpenCategoryEditor() {
+	CategoryEditorDialog dialog(project_, this);
+	if (dialog.exec() != QDialog::Accepted) return;
 
+	project_.categories = dialog.Result();
+	MarkDirty();
+	RefreshInspector();
 }
 
 /* =====================================================================
@@ -461,6 +652,45 @@ void MainWindow::OpenCategoryEditor() {
  * ===================================================================== */
 
 void MainWindow::RunBuild() {
+	if (current_path_.empty()) {
+		QMessageBox::information(this, "ビルド",
+			"ビルドの前にプロジェクトを保存してください。");
+		if (!SaveProjectAs()) return;
+	} else if (dirty_) {
+		if (!SaveProject()) return;
+	}
+
+	const std::filesystem::path project_dir = current_path_.parent_path();
+	const std::filesystem::path output_dir  = project_dir / BUILD_OUTPUT_DIR;
+
+	QProgressDialog progress("ビルドしています...", "中断不可", 0, 0, this);
+	progress.setWindowModality(Qt::WindowModal);
+	progress.setCancelButton(nullptr);	///< The builder has no cancel path in v1.0
+	progress.setMinimumDuration(0);
+	progress.show();
+
+	const BuildResult res = ProjectBuilder::Build(
+		project_, project_dir, output_dir,
+		[&progress](const BuildProgress& p) {
+			progress.setMaximum(static_cast<int>(p.total_waveforms));
+			progress.setValue(static_cast<int>(p.processed_waveforms));
+			progress.setLabelText(QString("ビルドしています...\n%1")
+				.arg(QString::fromStdString(p.current_item)));
+			QCoreApplication::processEvents();
+		});
+
+	progress.close();
+
+	issue_list_->ShowIssues(res.issues);
+
+	if (res.succeeded) {
+		QMessageBox::information(this, "ビルド",
+			QString("ビルドが完了しました。\n出力先: %1")
+				.arg(QString::fromStdString(output_dir.string())));
+	} else {
+		QMessageBox::critical(this, "ビルド",
+			"ビルドに失敗しました。下部の一覧でエラー内容を確認してください。");
+	}
 }
 
 /* =====================================================================
@@ -485,11 +715,11 @@ void MainWindow::RebuildTreeFromProject() {
 
 	rebuilding_ = true;
 
-	object_tree_->Clear();
+	object_tree_->ResetWithProject(QString::fromStdString(project_.project_name));
 
 	for (const auto& collection : project_.cue_collections) {
 		QTreeWidgetItem* collection_item =
-			object_tree_->AddCueCollectionIntoTree(QString::fromStdString(collection.name));
+			object_tree_->AddCueCollectionIntoProject(QString::fromStdString(collection.name));
 
 		for (const auto& cue : collection.cues) {
 			object_tree_->AddCueIntoCueCollection(
