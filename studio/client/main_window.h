@@ -67,6 +67,11 @@ private:
 	void RenameCollection(QTreeWidgetItem* item, const QString& new_name);
 
 	/**
+	 * @brief Handle an in-place rename from the tree (F2 / double-click).
+	 */
+	void OnItemRenamed(QTreeWidgetItem* item, const QString& new_name);
+
+	/**
 	 * @brief Produce a name not yet used among the given existing names.
 	 * @param base   Prefix such as "新規Collection".
 	 * @param taken  Names already in use.
@@ -125,9 +130,10 @@ private:
 	ProjectPropertiesEditorWidget*	project_properties_editor_	= nullptr;
 	CuePropertiesEditorWidget*		cue_properties_editor_		= nullptr;
 
-	ProjectModel			project_;
+	ProjectModel      		project_;
 	std::filesystem::path	current_path_;			///< Backing .wsp path, empty if never saved
 	bool					dirty_		= false;	///< Unsaved changes exist
+	bool					rebuilding_	= false;	///< Suppresses rename handling during tree rebuild
 };
 
 }

@@ -1,14 +1,15 @@
 #include "main_window.h"
 
 #include <QWidget>
+#include <QCloseEvent>
+#include <QFileDialog>
+#include <QMenuBar>
+#include <QMessageBox>
 #include <QSplitter>
 #include <QVBoxLayout>
 #include <QLabel>
 #include <QPalette>
 #include <QStackedWidget>
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QCloseEvent>
 
 #include "project_serializer.h"
 
@@ -44,13 +45,40 @@ MainWindow::MainWindow() {
 
 	project_ = ProjectSerializer::MakeNewProject("新規プロジェクト");
 
+	BuildMenus();
 	BuildBodyLayout();
+	UpdateWindowTitle();
 }
 
 /* =====================================================================
  * UI construction
  * ===================================================================== */
 void MainWindow::BuildMenus() {
+	auto* file_menu = menuBar()->addMenu("ファイル(&F)");
+
+	auto* new_action = file_menu->addAction("新しいプロジェクト(&N)");
+	new_action->setShortcut(QKeySequence::New);
+	connect(new_action, &QAction::triggered, this, [this]() { NewProject(); });
+
+	auto* open_action = file_menu->addAction("プロジェクトを開く(&O)...");
+	open_action->setShortcut(QKeySequence::Open);
+	connect(open_action, &QAction::triggered, this, [this]() { OpenProject(); });
+
+	file_menu->addSeparator();
+
+	auto* save_action = file_menu->addAction("上書き保存(&S)");
+	save_action->setShortcut(QKeySequence::Save);
+	connect(save_action, &QAction::triggered, this, [this]() { SaveProject(); });
+
+	auto* save_as_action = file_menu->addAction("名前を付けて保存(&A)...");
+	save_as_action->setShortcut(QKeySequence::SaveAs);
+	connect(save_as_action, &QAction::triggered, this, [this]() { SaveProjectAs(); });
+
+	file_menu->addSeparator();
+
+	auto* quit_action = file_menu->addAction("終了(&Q)");
+	quit_action->setShortcut(QKeySequence::Quit);
+	connect(quit_action, &QAction::triggered, this, [this]() { close(); });
 }
 
 void MainWindow::BuildBodyLayout() {
@@ -78,6 +106,10 @@ void MainWindow::BuildBodyLayout() {
 			OnTreeSelectionChanged(item_type, name);
 		};
 
+		object_tree_->onItemRenamed = [this](QTreeWidgetItem* item, const QString& new_name) {
+			OnItemRenamed(item, new_name);
+		};
+
 		horizontal_split->addWidget(object_tree_);
 	}
 
@@ -95,13 +127,13 @@ void MainWindow::BuildBodyLayout() {
 
 		project_properties_editor_ = new ProjectPropertiesEditorWidget(inspector_view_);
 		project_properties_editor_->on_changed = [this]() {
-			/* mark dirty when wired */
+			MarkDirty();
 		};
 		inspector_view_->addWidget(project_properties_editor_);
 
 		cue_properties_editor_ = new CuePropertiesEditorWidget(inspector_view_);
 		cue_properties_editor_->on_changed = [this]() {
-			/* mark dirty when wired */
+			MarkDirty();
 		};
 		inspector_view_->addWidget(cue_properties_editor_);
 
@@ -286,8 +318,86 @@ void MainWindow::RenameCollection(QTreeWidgetItem* item, const QString& new_name
 	const int collection_index = object_tree_->TopLevelIndexOf(item);
 	if (collection_index < 0 ||	collection_index >= static_cast<int>(project_.cue_collections.size())) return;
 
-	project_.cue_collections[collection_index].name = new_name.toStdString();
-	item->setText(0, new_name);
+	const std::string trimmed = new_name.trimmed().toStdString();
+	if (trimmed.empty()) return;
+
+	// Reject a clash with another collection; names become output file stems.
+	for (std::size_t itr = 0; itr < project_.cue_collections.size(); ++itr) {
+		if (static_cast<int>(itr) == collection_index) continue;
+		if (project_.cue_collections[itr].name == trimmed) {
+			QMessageBox::warning(this, "名前を変更",
+				"同じ名前のキューコレクションが既に存在します。");
+			return;
+		}
+	}
+
+	project_.cue_collections[collection_index].name = trimmed;
+	object_tree_->SetItemTextSilently(item, QString::fromStdString(trimmed));
+	MarkDirty();
+}
+
+void MainWindow::OnItemRenamed(QTreeWidgetItem* item, const QString& new_name) {
+	if (rebuilding_ || object_tree_ == nullptr || item == nullptr) return;
+
+	int collection_index;
+	int cue_index;
+	object_tree_->ResolveItem(item, collection_index, cue_index);
+
+	if (collection_index < 0 || collection_index >= static_cast<int>(project_.cue_collections.size())) {
+		return;
+	}
+
+	CueCollectionModel& collection = project_.cue_collections[collection_index];
+	const std::string   trimmed    = new_name.trimmed().toStdString();
+
+	// --- Cue rename ---
+	if (cue_index >= 0) {
+		if (cue_index >= static_cast<int>(collection.cues.size())) return;
+
+		CueModel& cue = collection.cues[cue_index];
+		if (trimmed == cue.cue_name) return;	///< no change
+
+		if (trimmed.empty()) {
+			object_tree_->SetItemTextSilently(item, QString::fromStdString(cue.cue_name));
+			return;
+		}
+
+		// Reject a name already taken by a sibling cue.
+		for (std::size_t itr = 0; itr < collection.cues.size(); ++itr) {
+			if (static_cast<int>(itr) == cue_index) continue;
+			if (collection.cues[itr].cue_name == trimmed) {
+				QMessageBox::warning(this, "名前を変更",
+					"同じ名前のキューが既に存在します。");
+				object_tree_->SetItemTextSilently(item, QString::fromStdString(cue.cue_name));
+				return;
+			}
+		}
+
+		cue.cue_name = trimmed;
+		MarkDirty();
+		return;
+	}
+
+	// --- CueCollection rename ---
+	if (trimmed == collection.name) return;	///< no change
+
+	if (trimmed.empty()) {
+		object_tree_->SetItemTextSilently(item, QString::fromStdString(collection.name));
+		return;
+	}
+
+	// Collection names become output file stems, so a clash is fatal at build.
+	for (std::size_t itr = 0; itr < project_.cue_collections.size(); ++itr) {
+		if (static_cast<int>(itr) == collection_index) continue;
+		if (project_.cue_collections[itr].name == trimmed) {
+			QMessageBox::warning(this, "名前を変更",
+				"同じ名前のキューコレクションが既に存在します。");
+			object_tree_->SetItemTextSilently(item, QString::fromStdString(collection.name));
+			return;
+		}
+	}
+
+	collection.name = trimmed;
 	MarkDirty();
 }
 
@@ -373,6 +483,8 @@ void MainWindow::ReplaceProject(ProjectModel&& project, const std::filesystem::p
 void MainWindow::RebuildTreeFromProject() {
 	if (object_tree_ == nullptr) return;
 
+	rebuilding_ = true;
+
 	object_tree_->Clear();
 
 	for (const auto& collection : project_.cue_collections) {
@@ -384,6 +496,8 @@ void MainWindow::RebuildTreeFromProject() {
 				collection_item, QString::fromStdString(cue.cue_name));
 		}
 	}
+
+	rebuilding_ = false;
 }
 
 void MainWindow::MarkDirty() {

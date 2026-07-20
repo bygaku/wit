@@ -3,6 +3,7 @@
 #include <QContextMenuEvent>
 #include <QHeaderView>
 #include <QMenu>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <QInputDialog>
 
@@ -43,8 +44,8 @@ void ObjectTreeWidget::BuildLayout() {
 
 	connect(m_tree_widget_, &QTreeWidget::itemChanged, this,
 			[this](QTreeWidgetItem* item, int) {
-		if (item == nullptr || !onItemChanged) return;
-		onItemChanged(item->type(), item->text(0));
+		if (item == nullptr || !onItemRenamed) return;
+		onItemRenamed(item, item->text(0));
 	});
 }
 
@@ -109,8 +110,38 @@ void ObjectTreeWidget::CurrentSelection(int& out_collection, int& out_cue) const
 }
 
 void ObjectTreeWidget::Clear() {
+	// Suppress currentItemChanged while tearing the tree down; otherwise the
+	// host's selection handler runs against a model that is mid-rebuild.
 	const QSignalBlocker blocker(m_tree_widget_);
 	m_tree_widget_->clear();
+}
+
+void ObjectTreeWidget::ResolveItem(QTreeWidgetItem* item, int& out_collection, int& out_cue) const {
+	out_collection	= -1;
+	out_cue			= -1;
+
+	if (item == nullptr) return;
+
+	if (item->type() == ItemType::CueCollection) {
+		out_collection = m_tree_widget_->indexOfTopLevelItem(item);
+		return;
+	}
+
+	if (item->type() == ItemType::Cue) {
+		QTreeWidgetItem* parent = item->parent();
+		if (parent == nullptr) return;
+
+		out_collection = m_tree_widget_->indexOfTopLevelItem(parent);
+		out_cue        = parent->indexOfChild(item);
+	}
+}
+
+void ObjectTreeWidget::SetItemTextSilently(QTreeWidgetItem* item, const QString& text) {
+	if (item == nullptr) return;
+
+	// Reverting a rejected edit must not re-enter the itemChanged handler.
+	const QSignalBlocker blocker(m_tree_widget_);
+	item->setText(0, text);
 }
 
 /* =====================================================================

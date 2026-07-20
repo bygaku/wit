@@ -29,7 +29,7 @@ public:
 	std::function<void()> onAddCueCollectionRequested;
 	std::function<void(QTreeWidgetItem* parent_collection)> onAddCueRequested;
 	std::function<void(int item_type, const QString& name)> onItemSelected;
-	std::function<void(int item_type, const QString& name)> onItemChanged;
+	std::function<void(QTreeWidgetItem* target_item, const QString& name)> onItemRenamed;
 	std::function<void(QTreeWidgetItem* target_item, const QString& name)> onEditCueCollectionNameRequested;
 
 	enum ItemType {
@@ -79,11 +79,26 @@ public:
 	void CurrentSelection(int& out_collection, int& out_cue) const;
 
 	/**
-	 * @brief
-	 *
-	 *
+	 * @brief Remove every item from the tree.
 	 */
 	void Clear();
+
+	/**
+	 * @brief Resolve an arbitrary item to model coordinates.
+	 * @param item           The item to resolve.
+	 * @param out_collection Receives the collection index, or -1.
+	 * @param out_cue        Receives the cue index, or -1 for a collection.
+	 */
+	void ResolveItem(QTreeWidgetItem* item, int& out_collection, int& out_cue) const;
+
+	/**
+	 * @brief Set an item's text without emitting onItemRenamed.
+	 *
+	 * Used to revert a rejected rename; the write must not re-enter the rename
+	 * handler that requested the revert.
+	 */
+	void SetItemTextSilently(QTreeWidgetItem* item, const QString& text);
+
 protected:
 	/**
 	 * @note Accepts right-clicks and displays a menu.
