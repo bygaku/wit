@@ -10,7 +10,7 @@
 
 namespace wit {
 
-constexpr std::size_t MAX_WAVEFORM_NAME_LENGTH = 32;
+constexpr std::size_t MAX_WAVEFORM_NAME_LENGTH = 64;
 
 /**
  * @struct WaveformInfo
