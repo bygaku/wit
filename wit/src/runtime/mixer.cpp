@@ -24,6 +24,13 @@ inline void ClampInPlace(float* buffer, uint32_t count, float threshold) noexcep
     }
 }
 
+inline float FadeAt(float base, float step, uint32_t offset) noexcept {
+    float g = base + step * static_cast<float>(offset);
+    if (g < 0.0f) g = 0.0f;
+    if (g > 1.0f) g = 1.0f;
+    return g;
+}
+
 } // namespace
 
 void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
@@ -38,10 +45,12 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
     std::fill_n(mix_left_.data(),  frame_count, 0.0f);
     std::fill_n(mix_right_.data(), frame_count, 0.0f);
 
-    // Only PLAYING slots contribute samples.
     for (size_t si = 0; si < VoicePool::MAX_VOICE_COUNT; ++si) {
         Voice& v = voices.At(si);
-        if (v.state != VoiceState::PLAYING) continue;	///< Ignore
+        const bool audible = v.state == VoiceState::PLAYING
+                          || v.state == VoiceState::PAUSING
+                          || v.state == VoiceState::STOPPING;
+        if (!audible) continue;	///< Ignore
 
         const float  category_gain = categories.GetCurrentLinearGain(v.category_id);
         const float  voice_gain    = v.volume * category_gain;
@@ -123,8 +132,11 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
                     const float    sl   = tmp_left_[idx]  * (1.0f - frac) + tmp_left_[idx  + 1] * frac;
                     const float    sr   = tmp_right_[idx] * (1.0f - frac) + tmp_right_[idx + 1] * frac;
 
-                    mix_left_[out_index + produced]  += sl * voice_gain;
-                    mix_right_[out_index + produced] += sr * voice_gain;
+                    const float    fade = FadeAt(v.fade_gain, v.fade_step, out_index + produced);
+                    const float    gain = voice_gain * fade;
+
+                    mix_left_[out_index + produced]  += sl * gain;
+                    mix_right_[out_index + produced] += sr * gain;
 
                     local_cursor += pitch;
                 }
@@ -133,6 +145,11 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
                 out_index  += produced;
                 if (produced == 0) break;	///< No forward progress (underrun boundary), bail out
             }
+        }
+
+        // Advance the fade once for the whole voice
+        if (v.fade_step != 0.0f) {
+            v.fade_gain = FadeAt(v.fade_gain, v.fade_step, frame_count);
         }
     }
 
