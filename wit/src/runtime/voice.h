@@ -26,8 +26,9 @@ enum class VoiceState : uint8_t {
     CLAIMED,        ///< Acquired but caller has not yet transitioned to PLAYING.
     PREPARING,      ///< Waiting for streaming buffers to fill before PLAYING.
     PLAYING,        ///< Seek samples every audio callback.
+    PAUSING,        ///< Fading out toward PAUSED; still audible this callback.
     PAUSED,         ///< Retains cursor state.
-    STOPPING,       ///< Will transition to FINISHED.
+    STOPPING,       ///< Fading out toward FINISHED; still audible this callback.
     FINISHED,       ///< Playback ended.
 };
 
@@ -55,6 +56,9 @@ struct Voice {
     bool        loop_enabled      = false;
     float       volume            = 1.0f;
     float       pitch             = 1.0f;
+
+    float       fade_gain         = 1.0f;
+    float       fade_step         = 0.0f;
 
     /* Loop region resolved at Play time (POLYPHONIC only). loop_end == 0 means no looping. */
     uint64_t    loop_start        = 0;

@@ -1,5 +1,5 @@
 /**
- * Created by intwi on 2026/06/04.
+* Created by intwi on 2026/06/04.
  * Copyright (c) 2026 All rights reserved.
  */
 #ifndef WIT_MIXER_H
@@ -23,7 +23,8 @@ class Mixer {
 public:
 	/// HACK: I'll look it up myself later. My AI said "miniaudio typically requests 256-2048 frames".
     static constexpr uint32_t MAX_FRAME_COUNT = 2048;	///< Largest frame count the internal buffers can handle in one Process() call
-	static constexpr float LIMITER_THRESHOLD = 0.99f;	///< It's so simple!
+	static constexpr float LIMITER_THRESHOLD  = 0.99f;	///< It's so simple!
+	static constexpr float FADE_DURATION_MS	  = 100.0f;	///< Very short click-suppression fade for pause / resume / stop.
 
     Mixer() = default;
 

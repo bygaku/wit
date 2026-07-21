@@ -97,6 +97,7 @@ struct AudioEngine::Impl {
 
     VoicePool									voice_pool_;	///<
     Mixer										mixer_;			///<
+    uint32_t									fade_samples_ = 1;	///< Fade length in samples
     std::unique_ptr<StreamingReader>			streaming_reader_;	///< Owns the streaming read thread
     RingBuffer<Command, SPSC_QUEUE_CAPACITY>	command_queue_;	///<
     RingBuffer<Event,   SPSC_QUEUE_CAPACITY>	event_queue_;	///<
@@ -118,6 +119,9 @@ struct AudioEngine::Impl {
         } else {
             std::memset(output, 0,static_cast<size_t>(frame_count) * 2 * sizeof(float));
         }
+
+        // Settle voices whose pause / stop fade finished during this Process().
+        ConfirmFadeTransitions();
 
         // Detect voices that reached the end of their waveforms naturally and mark them FINISHED.
         DetectAndReportFinishedVoices();
@@ -157,14 +161,31 @@ struct AudioEngine::Impl {
                 }
                 break;
             case CommandType::PAUSE_VOICE:
-                if (v->state == VoiceState::PLAYING) v->state = VoiceState::PAUSED;
+                if (v->state == VoiceState::PLAYING) {
+                    v->state     = VoiceState::PAUSING;
+                    v->fade_step = -1.0f / static_cast<float>(fade_samples_);
+                }
                 break;
             case CommandType::RESUME_VOICE:
-                if (v->state == VoiceState::PAUSED) v->state = VoiceState::PLAYING;
+                if (v->state == VoiceState::PAUSED) {
+                    const double rewind = static_cast<double>(fade_samples_);
+                    for (uint8_t wi = 0; wi < v->active_slot_count; ++wi) {
+                        double c = v->slots[wi].cursor - rewind;
+                        if (c < 0.0) c = 0.0;
+                        v->slots[wi].cursor = c;
+                    }
+                    v->state     = VoiceState::PLAYING;
+                    v->fade_step = 1.0f / static_cast<float>(fade_samples_);
+                } else if (v->state == VoiceState::PAUSING) {
+                    v->state     = VoiceState::PLAYING;
+                    v->fade_step = 1.0f / static_cast<float>(fade_samples_);
+                }
                 break;
             case CommandType::STOP_VOICE:
-                // v1.0: immediate stop (no drain / fade).
-                if (v->state != VoiceState::INACTIVE && v->state != VoiceState::FINISHED) {
+                if (v->state == VoiceState::PLAYING || v->state == VoiceState::PAUSING) {
+                    v->state     = VoiceState::STOPPING;
+                    v->fade_step = -1.0f / static_cast<float>(fade_samples_);
+                } else if (v->state == VoiceState::PAUSED) {
                     v->state = VoiceState::FINISHED;
                     PostVoiceFinished(cmd.slot_index, cmd.generation);
                 }
@@ -200,6 +221,43 @@ struct AudioEngine::Impl {
 
             if (v.state == VoiceState::PREPARING && all_ready) {
                 v.state = VoiceState::PLAYING;
+            }
+        }
+    }
+
+    /**
+     * @brief Settle voices whose pause / stop fade has completed.
+     */
+    void ConfirmFadeTransitions() noexcept {
+        for (uint8_t slot = 0; slot < VoicePool::MAX_VOICE_COUNT; ++slot) {
+            Voice& v = voice_pool_.At(slot);
+            switch (v.state) {
+                case VoiceState::PAUSING: {
+	                if (v.fade_gain <= 0.0f) {
+	                	v.fade_gain = 0.0f;
+	                	v.fade_step = 0.0f;
+	                	v.state     = VoiceState::PAUSED;
+	                }
+                	break;
+                }
+                case VoiceState::STOPPING: {
+	                if (v.fade_gain <= 0.0f) {
+	                	v.fade_gain = 0.0f;
+	                	v.fade_step = 0.0f;
+	                	v.state     = VoiceState::FINISHED;
+	                	PostVoiceFinishedForSlot(slot);
+	                }
+                	break;
+                }
+                case VoiceState::PLAYING: {
+	                // Fade-in finished: hold at full gain.
+                	if (v.fade_step > 0.0f && v.fade_gain >= 1.0f) {
+                		v.fade_gain = 1.0f;
+                		v.fade_step = 0.0f;
+                	}
+                	break;
+                }
+                default: break;
             }
         }
     }
@@ -348,6 +406,13 @@ WitResult AudioEngine::Init(const char* wpb_path, const WitInitParams* params) {
     impl_->device_started_ = true;
 
     impl_->project_data_        = std::move(pd);
+
+    // Resolve the fade length in samples once, against the real sample rate.
+    const uint32_t sample_rate  = impl_->project_data_->Format().sample_rate;
+    const auto     fade_samples = static_cast<uint32_t>(
+        (Mixer::FADE_DURATION_MS * static_cast<float>(sample_rate)) / 1000.0f);
+    impl_->fade_samples_        = fade_samples > 0 ? fade_samples : 1;
+
     impl_->cue_collection_store_       = std::make_unique<CueCollectionStore>();
     impl_->cue_player_register_ = std::make_unique<CuePlayerRegister>();
 
@@ -722,6 +787,7 @@ WitPlaybackStatus AudioEngine::VoiceGetStatus(WitVoiceHn voice_handle) {
 		case VoiceState::CLAIMED:   return WIT_PLAYBACK_STATUS_PENDING;
 		case VoiceState::PREPARING: return WIT_PLAYBACK_STATUS_PENDING;
 		case VoiceState::PLAYING:   return WIT_PLAYBACK_STATUS_PLAYING;
+		case VoiceState::PAUSING:   return WIT_PLAYBACK_STATUS_PLAYING;
 		case VoiceState::PAUSED:    return WIT_PLAYBACK_STATUS_PAUSED;
 		case VoiceState::STOPPING:  return WIT_PLAYBACK_STATUS_STOPPING;
 		case VoiceState::FINISHED:  return WIT_PLAYBACK_STATUS_FINISHED;
@@ -740,6 +806,7 @@ bool AudioEngine::VoiceIsActive(WitVoiceHn voice_handle) {
 		case VoiceState::CLAIMED:
 		case VoiceState::PREPARING:
 		case VoiceState::PLAYING:
+		case VoiceState::PAUSING:
 		case VoiceState::PAUSED:
 			return true;
 
