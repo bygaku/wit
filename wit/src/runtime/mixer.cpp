@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "biquad.h"
 #include "data/category_store.h"
 #include "data/waveform_provider.h"
 #include "voice.h"
@@ -56,6 +57,9 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
         const float  voice_gain    = v.volume * category_gain;
         const auto	 pitch         = static_cast<double>(v.pitch);
         if (pitch <= 0.0) continue;	///< can't playback
+
+        std::fill_n(voice_left_.data(),  frame_count, 0.0f);
+        std::fill_n(voice_right_.data(), frame_count, 0.0f);
 
         // Sample-accurate loop wrap point on the cue timeline (0 = no looping).
         const auto loop_end   = static_cast<double>(v.loop_end);
@@ -132,11 +136,8 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
                     const float    sl   = tmp_left_[idx]  * (1.0f - frac) + tmp_left_[idx  + 1] * frac;
                     const float    sr   = tmp_right_[idx] * (1.0f - frac) + tmp_right_[idx + 1] * frac;
 
-                    const float    fade = FadeAt(v.fade_gain, v.fade_step, out_index + produced);
-                    const float    gain = voice_gain * fade;
-
-                    mix_left_[out_index + produced]  += sl * gain;
-                    mix_right_[out_index + produced] += sr * gain;
+                    voice_left_[out_index + produced]  += sl;
+                    voice_right_[out_index + produced] += sr;
 
                     local_cursor += pitch;
                 }
@@ -145,6 +146,22 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
                 out_index  += produced;
                 if (produced == 0) break;	///< No forward progress (underrun boundary), bail out
             }
+        }
+
+        // Tone shaping first: the filter sees the raw voice signal only.
+        if (v.filter.active) {
+            biquad::ProcessInPlace(voice_left_.data(),  frame_count,
+                                   v.filter.coeffs, v.filter.channel[0], v.filter.mix);
+            biquad::ProcessInPlace(voice_right_.data(), frame_count,
+                                   v.filter.coeffs, v.filter.channel[1], v.filter.mix);
+        }
+
+        // Amplitude next: voice gain and the per-sample fade fold into master.
+        for (uint32_t itr = 0; itr < frame_count; ++itr) {
+            const float fade = FadeAt(v.fade_gain, v.fade_step, itr);
+            const float gain = voice_gain * fade;
+            mix_left_[itr]  += voice_left_[itr]  * gain;
+            mix_right_[itr] += voice_right_[itr] * gain;
         }
 
         // Advance the fade once for the whole voice

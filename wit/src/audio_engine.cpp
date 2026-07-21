@@ -138,58 +138,73 @@ struct AudioEngine::Impl {
         if (v == nullptr) return;
 
         switch (cmd.type) {
-            case CommandType::START_PLAYING:
-                if (v->state == VoiceState::CLAIMED) {
-                    // Kick off streaming fills and start immediately when every
-                    // slot can already serve its cursor. Memory-resident slots
-                    // have no streaming pointer and are always ready.
-                    bool all_ready = true;
-                    for (uint8_t wi = 0; wi < v->active_slot_count; ++wi) {
-                        Voice::Slot& slot = v->slots[wi];
-                        if (slot.streaming == nullptr) continue;
+            case CommandType::START_PLAYING: {
+	            if (v->state == VoiceState::CLAIMED) {
+	            	bool all_ready = true;
+	            	for (uint8_t wi = 0; wi < v->active_slot_count; ++wi) {
+	            		Voice::Slot& slot = v->slots[wi];
+	            		if (slot.streaming == nullptr) continue;
 
-                        // Teach the prefetch where the loop wraps so a
-                        // restart finds its data already buffered.
-                        const uint64_t total   = slot.streaming->TotalSampleCount();
-                        const uint64_t wrap_at = (v->loop_end > 0 && v->loop_end < total) ? v->loop_end : 0;
-                        slot.streaming->SetLoopRegion(v->loop_end > 0 ? v->loop_start : 0, wrap_at);
+	            		const uint64_t total   = slot.streaming->TotalSampleCount();
+	            		const uint64_t wrap_at = (v->loop_end > 0 && v->loop_end < total) ? v->loop_end : 0;
+	            		slot.streaming->SetLoopRegion(v->loop_end > 0 ? v->loop_start : 0, wrap_at);
 
-                        slot.streaming->UpdateStreaming(static_cast<uint64_t>(slot.cursor));
-                        if (!slot.streaming->IsReadyAt(static_cast<uint64_t>(slot.cursor))) all_ready = false;
-                    }
-                    v->state = all_ready ? VoiceState::PLAYING : VoiceState::PREPARING;
-                }
-                break;
-            case CommandType::PAUSE_VOICE:
-                if (v->state == VoiceState::PLAYING) {
-                    v->state     = VoiceState::PAUSING;
-                    v->fade_step = -1.0f / static_cast<float>(fade_samples_);
-                }
-                break;
-            case CommandType::RESUME_VOICE:
-                if (v->state == VoiceState::PAUSED) {
-                    const double rewind = static_cast<double>(fade_samples_);
-                    for (uint8_t wi = 0; wi < v->active_slot_count; ++wi) {
-                        double c = v->slots[wi].cursor - rewind;
-                        if (c < 0.0) c = 0.0;
-                        v->slots[wi].cursor = c;
-                    }
-                    v->state     = VoiceState::PLAYING;
-                    v->fade_step = 1.0f / static_cast<float>(fade_samples_);
-                } else if (v->state == VoiceState::PAUSING) {
-                    v->state     = VoiceState::PLAYING;
-                    v->fade_step = 1.0f / static_cast<float>(fade_samples_);
-                }
-                break;
-            case CommandType::STOP_VOICE:
-                if (v->state == VoiceState::PLAYING || v->state == VoiceState::PAUSING) {
-                    v->state     = VoiceState::STOPPING;
-                    v->fade_step = -1.0f / static_cast<float>(fade_samples_);
-                } else if (v->state == VoiceState::PAUSED) {
-                    v->state = VoiceState::FINISHED;
-                    PostVoiceFinished(cmd.slot_index, cmd.generation);
-                }
-                break;
+	            		slot.streaming->UpdateStreaming(static_cast<uint64_t>(slot.cursor));
+	            		if (!slot.streaming->IsReadyAt(static_cast<uint64_t>(slot.cursor))) all_ready = false;
+	            	}
+	            	v->state = all_ready ? VoiceState::PLAYING : VoiceState::PREPARING;
+	            }
+            	break;
+            }
+            case CommandType::PAUSE_VOICE: {
+	            if (v->state == VoiceState::PLAYING) {
+	            	v->state     = VoiceState::PAUSING;
+	            	v->fade_step = -1.0f / static_cast<float>(fade_samples_);
+	            }
+            	break;
+            }
+            case CommandType::RESUME_VOICE: {
+	            if (v->state == VoiceState::PAUSED) {
+	            	const double rewind = static_cast<double>(fade_samples_);
+	            	for (uint8_t wi = 0; wi < v->active_slot_count; ++wi) {
+	            		double c = v->slots[wi].cursor - rewind;
+	            		if (c < 0.0) c = 0.0;
+	            		v->slots[wi].cursor = c;
+	            	}
+	            	v->state     = VoiceState::PLAYING;
+	            	v->fade_step = 1.0f / static_cast<float>(fade_samples_);
+	            } else if (v->state == VoiceState::PAUSING) {
+	            	v->state     = VoiceState::PLAYING;
+	            	v->fade_step = 1.0f / static_cast<float>(fade_samples_);
+	            }
+            	break;
+            }
+            case CommandType::STOP_VOICE: {
+	            if (v->state == VoiceState::PLAYING || v->state == VoiceState::PAUSING) {
+	            	v->state     = VoiceState::STOPPING;
+	            	v->fade_step = -1.0f / static_cast<float>(fade_samples_);
+	            } else if (v->state == VoiceState::PAUSED) {
+	            	v->state = VoiceState::FINISHED;
+	            	PostVoiceFinished(cmd.slot_index, cmd.generation);
+	            }
+            	break;
+            }
+        	case CommandType::SET_FILTER: {
+	            v->filter.coeffs = cmd.filter.coeffs;
+            	v->filter.mix    = cmd.filter.mix;
+            	if (!v->filter.active) {
+            		v->filter.channel[0].Reset();
+            		v->filter.channel[1].Reset();
+            	}
+            	v->filter.active = true;
+            	break;
+            }
+            case CommandType::CLEAR_FILTER: {
+	            v->filter.active = false;
+            	v->filter.channel[0].Reset();
+            	v->filter.channel[1].Reset();
+            	break;
+            }
             case CommandType::NONE:
             default:
                 break;
@@ -558,8 +573,8 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
     if (cue->waveform_count == 0)                        return WIT_RESULT_NO_CUE_ATTACHED;
     CueCollectionStore& store = *impl_->cue_collection_store_;
 
-    // A streaming provider holds one read position, so a streaming Cue may
-    // drive only one active Voice at a time. Report it instead of failing silently.
+    // A streaming provider holds one read position, so a streaming Cue may drive only one active Voice at a time.
+	// HACK: Refactor
     if (cue->streaming_mode == StreamingMode::STREAMING) {
         for (size_t si = 0; si < VoicePool::MAX_VOICE_COUNT; ++si) {
             const Voice& other = impl_->voice_pool_.At(si);
@@ -599,9 +614,6 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
     v->cue          = cue;
     v->owner		= player;
 
-    // Resolve the loop region on the cue timeline. Voice-level looping
-    // applies to POLYPHONIC only; SHUFFLE / SEQUENTIAL express looping as
-    // selection-cursor behavior across Play calls instead.
     v->loop_start = 0;
     v->loop_end   = 0;
     if (cue->loop_enabled && cue->cue_type == CueType::POLYPHONIC) {
@@ -618,8 +630,7 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
         }
     }
 
-    // Fill in waveform slots based on the cue's play rule. Providers are
-    // resolved through the owning CueCollection (waveform -> provider bookkeeping).
+    // Fill in waveform slots based on the cue's type.
     const auto total_waves = static_cast<uint32_t>(cue->waveform_count);
     switch (cue->cue_type) {
         case CueType::POLYPHONIC: {
@@ -635,8 +646,6 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
         	break;
         }
         case CueType::SHUFFLE: {
-            // A permutation is generated once and consumed one entry per Play.
-            // Loop ON restarts the same order; loop OFF saturates on its last entry.
             if (!player->HasShuffleOrder()) {
                 std::vector<uint8_t> order(total_waves);
                 std::iota(order.begin(), order.end(), static_cast<uint8_t>(0));
@@ -661,8 +670,6 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
             break;
         }
         case CueType::SEQUENTIAL: {
-            // Loop ON wraps the selection cursor; loop OFF saturates so
-            // further Plays keep producing the last waveform.
             const uint32_t idx = cue->loop_enabled
                 ? player->GetSequentialIndex() % total_waves
                 : std::min(player->GetSequentialIndex(), total_waves - 1);
@@ -852,6 +859,32 @@ WitResult AudioEngine::VoiceResume(WitVoiceHn voice_handle) {
 WitResult AudioEngine::VoiceStop(WitVoiceHn voice_handle) {
     if (!impl_) return WIT_RESULT_INIT_FAILED;
     return PostVoiceCommand(impl_->command_queue_, impl_->voice_pool_, voice_handle, CommandType::STOP_VOICE);
+}
+
+WitResult AudioEngine::VoiceSetFilter(WitVoiceHn voice_handle, const WitFilterParams* params) {
+    if (!impl_)                        return WIT_RESULT_INIT_FAILED;
+    if (params == nullptr)             return WIT_RESULT_INVALID_HANDLE;
+    if (!impl_->project_data_)         return WIT_RESULT_INIT_FAILED;
+    if (impl_->voice_pool_.Find(voice_handle) == nullptr) return WIT_RESULT_INVALID_HANDLE;
+
+    // Coefficients are computed here on the main thread.
+    const auto  sample_rate = static_cast<float>(impl_->project_data_->Format().sample_rate);
+    const float mix         = params->mix_level;
+
+    Command cmd;
+    cmd.type          = CommandType::SET_FILTER;
+    cmd.slot_index    = voice_handle::DecodeSlot(voice_handle);
+    cmd.generation    = voice_handle::DecodeGeneration(voice_handle);
+    cmd.filter.coeffs = biquad::MakeLowpass(params->cutoff_hz, sample_rate);
+    cmd.filter.mix    = (mix < 0.0f) ? 0.0f : (mix > 1.0f ? 1.0f : mix);
+    (void)impl_->command_queue_.Enqueue(cmd);
+
+    return WIT_RESULT_SUCCESS;
+}
+
+WitResult AudioEngine::VoiceClearFilter(WitVoiceHn voice_handle) {
+    if (!impl_) return WIT_RESULT_INIT_FAILED;
+    return PostVoiceCommand(impl_->command_queue_, impl_->voice_pool_, voice_handle, CommandType::CLEAR_FILTER);
 }
 
 }

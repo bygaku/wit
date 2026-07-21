@@ -127,6 +127,12 @@ public:
     WitResult VoiceResume(WitVoiceHn voice_handle);
     WitResult VoiceStop  (WitVoiceHn voice_handle);
 
+	/* =====================================================================
+	 * Voice filter
+	 * ===================================================================== */
+	WitResult VoiceSetFilter  (WitVoiceHn voice_handle, const WitFilterParams* params);
+	WitResult VoiceClearFilter(WitVoiceHn voice_handle);
+
 public:
     struct Impl;
 

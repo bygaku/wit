@@ -22,5 +22,9 @@ endif()
 add_subdirectory(external)
 # wit static library
 add_subdirectory(wit)
+
+option(WIT_BUILD_STUDIO "Build WitStudio" OFF)  # CMake Configure failure on GitHub Actions.
 # wit studio
-add_subdirectory(studio)
+if(WIT_BUILD_STUDIO)
+    add_subdirectory(studio)
+endif()
