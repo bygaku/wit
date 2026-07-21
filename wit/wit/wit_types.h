@@ -64,6 +64,39 @@ typedef struct WitInitParams {
     int32_t reserved;  ///< Placeholder for future field additions
 } WitInitParams;
 
+/* =====================================================================
+ * Filter parameters
+ * ===================================================================== */
+
+/**
+ * @enum WitFilterType
+ * @brief フィルタの種類
+ */
+typedef enum WitFilterType {
+    WIT_FILTER_TYPE_LOWPASS = 0,	///< TIPS: こもった音になります。
+} WitFilterType;
+
+/** HACK: Q は固定（0.707）で、ユーザに認識させません。*/
+
+/**
+ * @struct WitFilterParams
+ * @brief Voice に適用するフィルタのパラメータ。
+ *
+ * @note WIT_FILTER_PARAMS_DEFAULT で初期化すると、ローパス / 2000Hz / mix 100 が入ります。
+ */
+typedef struct WitFilterParams {
+    WitFilterType type;			///< フィルタ種別。デフォルト: WIT_FILTER_TYPE_LOWPASS
+    float         cutoff_hz;	///< カットオフ周波数[Hz]。デフォルト: 2000.0f
+    float         mix_level;	///< 適応量[0-1]。1.f で完全にフィルタが適応されます。デフォルト: 1.f
+} WitFilterParams;
+
+/**
+ * @brief WitFilterParams の既定値。
+ * @note C++ では WitFilterParams p = WIT_FILTER_PARAMS_DEFAULT; のように使えます。
+ */
+#define WIT_FILTER_PARAMS_DEFAULT \
+    { WIT_FILTER_TYPE_LOWPASS, 2000.0f, 1.0f }
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

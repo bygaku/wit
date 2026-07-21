@@ -32,14 +32,15 @@ public:
      * @brief Produce one callback's worth of interleaved stereo float samples.
      */
     void Process(VoicePool& voices,			const CategoryStore& categories,
-                 uint32_t	frame_count,	float* output) noexcept;
+                 uint32_t	frame_count,	float*				 output) noexcept;
 
 private:
     static constexpr uint32_t TMP_SOURCE_SIZE = MAX_FRAME_COUNT * 2 + 4;
 
-	/// HACK: Will refactor
     std::array<float, MAX_FRAME_COUNT> mix_left_{};
     std::array<float, MAX_FRAME_COUNT> mix_right_{};
+	std::array<float, MAX_FRAME_COUNT> voice_left_{};
+	std::array<float, MAX_FRAME_COUNT> voice_right_{};
     std::array<float, TMP_SOURCE_SIZE> tmp_left_{};
     std::array<float, TMP_SOURCE_SIZE> tmp_right_{};
 };

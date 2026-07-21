@@ -207,6 +207,29 @@ WitResult WitVoice_Resume(WitVoiceHn voice);
  */
 WitResult WitVoice_Stop(WitVoiceHn voice);
 
+/**
+ * @brief Voice にフィルタを設定（または上書き）します。
+ * @param voice  Play 時に発行された有効な WitVoiceHn。
+ * @param params フィルタのパラメータ。NULL 不可。
+ * @retval WIT_RESULT_SUCCESS 成功時。
+ * @retval その他 エラー。
+ *
+ * @note 現状はローパスのみ対応です。Q は固定（0.707）です。
+ *       同じ Voice に対して再度呼ぶとパラメータが更新されます。
+ *       cutoff_hz はナイキスト周波数未満に自動でクランプされます。
+ */
+WitResult WitVoice_SetFilter(WitVoiceHn voice, const WitFilterParams* params);
+
+/**
+ * @brief Voice に設定されたフィルタを解除します。
+ * @param voice Play 時に発行された有効な WitVoiceHn。
+ * @retval WIT_RESULT_SUCCESS 成功時。
+ * @retval その他 エラー。
+ *
+ * @note フィルタが設定されていない場合でも成功を返します。
+ */
+WitResult WitVoice_ClearFilter(WitVoiceHn voice);
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 
+#include "biquad.h"
 #include "data/cue_data.h"
 
 namespace wit {
@@ -48,7 +49,21 @@ struct Voice {
         double                     cursor    = 0.0;		///< Per-channel sample position on the cue timeline
     };
 
+	/**
+ 	 * @struct Filter
+ 	 * @brief Runtime low-pass filter applied to this Voice's mixed output.
+ 	 * @note Coefficients are supplied by the main thread via a command.
+ 	 *       State is owned by the audio thread and reset when (re)enabled.
+ 	 */
+	struct Filter {
+		BiquadCoeffs coeffs{};					///< Set from the main thread.
+		float        mix    = 1.0f;				///< Wet amount in [0, 1].
+		bool         active = false;			///< When false the filter is bypassed.
+		std::array<BiquadState, 2> channel{};	///< Per-channel state (audio thread).
+	};
+
     std::array<Slot, MAX_WAVEFORMS_PER_CUE> slots{};	///< Waveform slots
+	Filter      filter{};								///< Runtime filter, off by default
 
     VoiceState  state             = VoiceState::INACTIVE;
     uint8_t     active_slot_count = 0;

@@ -162,4 +162,14 @@ WitResult WitVoice_Stop(WitVoiceHn voice) {
     return g_engine->VoiceStop(voice);
 }
 
+WitResult WitVoice_SetFilter(WitVoiceHn voice, const WitFilterParams* params) {
+    if (!g_engine) return WIT_RESULT_INIT_FAILED;
+    return g_engine->VoiceSetFilter(voice, params);
+}
+
+WitResult WitVoice_ClearFilter(WitVoiceHn voice) {
+    if (!g_engine) return WIT_RESULT_INIT_FAILED;
+    return g_engine->VoiceClearFilter(voice);
+}
+
 }  // extern "C"
