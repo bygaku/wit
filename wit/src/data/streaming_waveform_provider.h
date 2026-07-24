@@ -23,8 +23,8 @@ namespace wit {
  */
 class StreamingWaveformProvider final : public IWaveformProvider {
 public:
-    static constexpr uint32_t BUFFER_FRAMES = 8192;	///< Frames per internal buffer
-    static constexpr uint32_t BUFFER_COUNT  = 2;	///< Double buffering
+    static constexpr uint32_t BUFFER_FRAMES = 16384;	///< Frames per internal buffer
+    static constexpr uint32_t BUFFER_COUNT  = 2;		///< Double buffering
 
     StreamingWaveformProvider(std::string	wwb_path,	   uint64_t		wwb_offset,		uint64_t byte_size,
                               uint64_t		sample_count,  SampleFormat sample_format,
