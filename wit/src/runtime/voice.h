@@ -62,8 +62,26 @@ struct Voice {
 		std::array<BiquadState, 2> channel{};	///< Per-channel state (audio thread).
 	};
 
+	/**
+	 * @struct Tape
+	 * @brief Runtime tape effect: a speed ramp driving this Voice's playback rate.
+	 */
+	struct Tape {
+		float rise_step = 0.0f;		///< Per-sample increment used on play / resume.
+		float fall_step = 0.0f;		///< Per-sample decrement used on stop / pause.
+		float position  = 1.0f;		///< Ramp position in [0, 1]: 1 is normal speed, 0 is stopped.
+		float step      = 0.0f;		///< Signed increment applied this callback, 0 when settled.
+		bool  active    = false;	///< When false the Voice behaves normally.
+	};
+
+	static constexpr float TAPE_MIN_POSITION	= 0.0001f;
+	static constexpr float TAPE_MIN_RATE		= 0.00001f;
+	static constexpr float TAPE_OCTAVE_RANGE	= 3.0f;
+	static constexpr float TAPE_GAIN_TAPER		= 0.5f;
+
     std::array<Slot, MAX_WAVEFORMS_PER_CUE> slots{};	///< Waveform slots
 	Filter      filter{};								///< Runtime filter, off by default
+	Tape        tape{};									///< Runtime tape effect, off by default
 
     VoiceState  state             = VoiceState::INACTIVE;
     uint8_t     active_slot_count = 0;
@@ -75,9 +93,8 @@ struct Voice {
     float       fade_gain         = 1.0f;
     float       fade_step         = 0.0f;
 
-    /* Loop region resolved at Play time (POLYPHONIC only). loop_end == 0 means no looping. */
-    uint64_t    loop_start        = 0;
-    uint64_t    loop_end          = 0;
+	uint64_t    loop_start        = 0;
+    uint64_t    loop_end          = 0;	///< 0 means no looping
 
     const CueData* cue            = nullptr;
     CuePlayer*     owner		  = nullptr;

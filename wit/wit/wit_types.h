@@ -97,6 +97,33 @@ typedef struct WitFilterParams {
 #define WIT_FILTER_PARAMS_DEFAULT \
     { WIT_FILTER_TYPE_LOWPASS, 2000.0f, 1.0f }
 
+/* =====================================================================
+ * Tape parameters
+ * ===================================================================== */
+
+/**
+ * @struct WitTapeParams
+ * @brief Voice に適用するテープ効果のパラメータ。
+ *
+ * テープデッキの停止・再始動のように、再生速度が滑らかに変化します。
+ * このパラメータを設定した Voice は、Play / Resume で start_ms をかけて通常速度まで加速し、
+ * Stop / Pause で stop_ms をかけて停止します。
+ *
+ * @attention v1.0.0 beta.2 において、stop_ms に 2000ms の最大値を設けています。
+ * reason: ストリーミング再生の音源の場合、多くのサンプルを消費し、ピッチが落ちきる前に補充が止まってしまうため。
+ */
+typedef struct WitTapeParams {
+    float start_ms;	///< 停止状態から通常速度に戻るまでの時間[ms]。デフォルト: 400.f
+    float stop_ms;	///< 通常速度から停止するまでの時間[ms]。デフォルト: 600.f 最大値: 2000.f
+} WitTapeParams;
+
+/**
+ * @brief WitTapeParams の既定値。
+ * @note C++ では WitTapeParams p = WIT_TAPE_PARAMS_DEFAULT; のように使えます。
+ */
+#define WIT_TAPE_PARAMS_DEFAULT \
+    { 500.0f, 500.0f }
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

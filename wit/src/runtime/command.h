@@ -24,6 +24,8 @@ enum class CommandType : uint8_t {
     STOP_VOICE,     	///< Transition slot toward FINISHED.
 	SET_FILTER,			///< Install/replace the voice filter (payload.filter).
 	CLEAR_FILTER,		///< Bypass and reset the voice filter.
+	SET_TAPE,			///< Install/replace the voice tape effect (payload.tape).
+	CLEAR_TAPE,			///< Disable the voice tape effect and restore normal speed.
 };
 
 /**
@@ -38,6 +40,15 @@ struct FilterCommandPayload {
 };
 
 /**
+ * @struct TapeCommandPayload
+ * @brief Precomputed tape ramp increments carried by SET_TAPE.
+ */
+struct TapeCommandPayload {
+	float rise_step = 0.0f;	///< Per-sample increment toward normal speed.
+	float fall_step = 0.0f;	///< Per-sample decrement toward a full stop (positive magnitude).
+};
+
+/**
  * @struct Command
  * @brief A command targets a specific Voice slot.
  */
@@ -48,6 +59,7 @@ struct Command {
 
 	union {
 		FilterCommandPayload filter;
+		TapeCommandPayload   tape;
 	};
 
 	Command() noexcept

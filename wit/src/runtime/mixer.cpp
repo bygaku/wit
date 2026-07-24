@@ -25,6 +25,37 @@ inline void ClampInPlace(float* buffer, uint32_t count, float threshold) noexcep
     }
 }
 
+inline float TapePositionAt(float base, float step, uint32_t offset) noexcept {
+    float pos = base + step * static_cast<float>(offset);
+    if (pos < 0.0f) pos = 0.0f;
+    if (pos > 1.0f) pos = 1.0f;
+    return pos;
+}
+
+/**
+ * @brief Map a ramp position in [0, 1] onto a playback rate multiplier.
+ * @note Position 1 is normal speed and each step down the ramp drops a fixed
+ *       number of octaves, so the glide is even to the ear. A linear rate
+ *       ramp would instead spend half its length in the first octave alone.
+ */
+inline float TapeRateFromPosition(float position) noexcept {
+    if (position >= 1.0f) return 1.0f;
+    if (position <= 0.0f) return 0.0f;
+	return std::exp2((position - 1.0f) * Voice::TAPE_OCTAVE_RANGE) * position;
+}
+
+/**
+ * @brief Amplitude taper applied at the very bottom of the ramp.
+ * @note The rate can only fall so far before it is clamped, so without this
+ *       the voice would still be audible when the ramp ends and the cut to
+ *       silence would click.
+ */
+inline float TapeGainFromPosition(float position) noexcept {
+    if (position >= Voice::TAPE_GAIN_TAPER) return 1.0f;
+    if (position <= 0.0f)                   return 0.0f;
+    return position / Voice::TAPE_GAIN_TAPER;
+}
+
 inline float FadeAt(float base, float step, uint32_t offset) noexcept {
     float g = base + step * static_cast<float>(offset);
     if (g < 0.0f) g = 0.0f;
@@ -42,9 +73,32 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
         return;
     }
 
+    // Render in short blocks.
+    for (uint32_t offset = 0; offset < frame_count; offset += CONTROL_BLOCK_FRAMES) {
+        uint32_t block = frame_count - offset;
+        if (block > CONTROL_BLOCK_FRAMES) block = CONTROL_BLOCK_FRAMES;
+
+        ProcessBlock(voices, categories, block,
+                     mix_left_.data() + offset, mix_right_.data() + offset);
+    }
+
+    // Apply the limiter.
+    ClampInPlace(mix_left_.data(),  frame_count, LIMITER_THRESHOLD);
+    ClampInPlace(mix_right_.data(), frame_count, LIMITER_THRESHOLD);
+
+    // Planar to interleave.
+    for (uint32_t itr = 0; itr < frame_count; ++itr) {
+        output[itr * 2 + 0] = mix_left_[itr];
+        output[itr * 2 + 1] = mix_right_[itr];
+    }
+}
+
+void Mixer::ProcessBlock(VoicePool&	voices,			const CategoryStore& categories,
+                         uint32_t	frame_count,	float* out_left,
+                         float*		out_right) noexcept {
     // Zero padding.
-    std::fill_n(mix_left_.data(),  frame_count, 0.0f);
-    std::fill_n(mix_right_.data(), frame_count, 0.0f);
+    std::fill_n(out_left,  frame_count, 0.0f);
+    std::fill_n(out_right, frame_count, 0.0f);
 
     for (size_t si = 0; si < VoicePool::MAX_VOICE_COUNT; ++si) {
         Voice& v = voices.At(si);
@@ -55,7 +109,20 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
 
         const float  category_gain = categories.GetCurrentLinearGain(v.category_id);
         const float  voice_gain    = v.volume * category_gain;
-        const auto	 pitch         = static_cast<double>(v.pitch);
+
+        float tape_rate       = 1.0f;
+        float tape_gain_begin = 1.0f;
+        float tape_gain_end   = 1.0f;
+        if (v.tape.active) {
+            const float pos_mid = TapePositionAt(v.tape.position, v.tape.step, frame_count / 2);
+            const float pos_end = TapePositionAt(v.tape.position, v.tape.step, frame_count);
+            tape_rate       = TapeRateFromPosition(pos_mid);
+            tape_gain_begin = TapeGainFromPosition(v.tape.position);
+            tape_gain_end   = TapeGainFromPosition(pos_end);
+        	if (tape_rate < Voice::TAPE_MIN_RATE) tape_rate = Voice::TAPE_MIN_RATE;
+        }
+
+        const auto pitch = static_cast<double>(v.pitch) * static_cast<double>(tape_rate);
         if (pitch <= 0.0) continue;	///< can't playback
 
         std::fill_n(voice_left_.data(),  frame_count, 0.0f);
@@ -74,9 +141,6 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
             const auto total_d       = static_cast<double>(total_samples);
             if (!looping && slot.cursor >= total_d) continue;
 
-            // The output block may span several timeline segments: an audible
-            // region [0, total), a silent tail [total, loop_end) when this
-            // waveform is shorter than the cue loop, and the wrap itself.
             uint32_t out_index = 0;
             while (out_index < frame_count) {
                 if (looping && slot.cursor >= loop_end) {
@@ -116,8 +180,6 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
                     src_begin, needed, tmp_left_.data(), tmp_right_.data());
                 if (read == 0) break;	///< Streaming underrun: silence, retry next callback
 
-                // Pad one zero past the waveform end so interpolation can
-                // reach the final sample instead of stalling just before it.
                 double max_local = static_cast<double>(read) - 1.0;
                 if (src_begin + read >= total_samples) {
                     tmp_left_[read]  = 0.0f;
@@ -156,29 +218,27 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
                                    v.filter.coeffs, v.filter.channel[1], v.filter.mix);
         }
 
-        // Amplitude next: voice gain and the per-sample fade fold into master.
+        const float tape_gain_delta = (tape_gain_end - tape_gain_begin) / static_cast<float>(frame_count);
+
         for (uint32_t itr = 0; itr < frame_count; ++itr) {
             const float fade = FadeAt(v.fade_gain, v.fade_step, itr);
-            const float gain = voice_gain * fade;
-            mix_left_[itr]  += voice_left_[itr]  * gain;
-            mix_right_[itr] += voice_right_[itr] * gain;
+            const float tape = tape_gain_begin + tape_gain_delta * static_cast<float>(itr);
+            const float gain = voice_gain * fade * tape;
+            out_left[itr]  += voice_left_[itr]  * gain;
+            out_right[itr] += voice_right_[itr] * gain;
         }
 
         // Advance the fade once for the whole voice
         if (v.fade_step != 0.0f) {
             v.fade_gain = FadeAt(v.fade_gain, v.fade_step, frame_count);
         }
+
+        // Advance the tape ramp once for the whole voice
+        if (v.tape.active && v.tape.step != 0.0f) {
+            v.tape.position = TapePositionAt(v.tape.position, v.tape.step, frame_count);
+        }
     }
 
-    // Apply the limiter.
-    ClampInPlace(mix_left_.data(),  frame_count, LIMITER_THRESHOLD);
-    ClampInPlace(mix_right_.data(), frame_count, LIMITER_THRESHOLD);
-
-    // Planar to interleaved...
-    for (uint32_t itr = 0; itr < frame_count; ++itr) {
-        output[itr * 2 + 0] = mix_left_[itr];
-        output[itr * 2 + 1] = mix_right_[itr];
-    }
 }
 
 }

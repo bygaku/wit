@@ -175,9 +175,6 @@ WitPlaybackStatus WitVoice_GetStatus(WitVoiceHn voice);
  * @param voice Play 時に発行された WitVoiceHn。
  * @retval true  再生セッションが継続中（一時停止含む）。
  * @retval false IDLE / STOPPING / FINISHED、または無効ハンドル。
- *
- * @note BGM のように「鳴っていなければ鳴らす」用途を想定した判定関数です。
- *       細かい状態が必要な場合は WitVoice_GetStatus を使用してください。
  */
 bool WitVoice_IsActive(WitVoiceHn voice);
 
@@ -214,9 +211,7 @@ WitResult WitVoice_Stop(WitVoiceHn voice);
  * @retval WIT_RESULT_SUCCESS 成功時。
  * @retval その他 エラー。
  *
- * @note 現状はローパスのみ対応です。Q は固定（0.707）です。
- *       同じ Voice に対して再度呼ぶとパラメータが更新されます。
- *       cutoff_hz はナイキスト周波数未満に自動でクランプされます。
+ * @note Q は固定（0.707）です。
  */
 WitResult WitVoice_SetFilter(WitVoiceHn voice, const WitFilterParams* params);
 
@@ -229,6 +224,27 @@ WitResult WitVoice_SetFilter(WitVoiceHn voice, const WitFilterParams* params);
  * @note フィルタが設定されていない場合でも成功を返します。
  */
 WitResult WitVoice_ClearFilter(WitVoiceHn voice);
+
+/**
+ * @brief Voice にテープ効果を設定（または上書き）します。
+ * @param voice  Play 時に発行された有効な WitVoiceHn。
+ * @param params テープ効果のパラメータ。NULL 不可。
+ * @retval WIT_RESULT_SUCCESS 成功時。
+ * @retval その他 エラー。
+ *
+ * @note 設定後は、この Voice に対する Play / Stop / Pause / Resume がすべてテープ効果つきの動作に変わります。
+ */
+WitResult WitVoice_SetTapeEffect(WitVoiceHn voice, const WitTapeParams* params);
+
+/**
+ * @brief Voice に設定されたテープ効果を解除します。
+ * @param voice Play 時に発行された有効な WitVoiceHn。
+ * @retval WIT_RESULT_SUCCESS 成功時。
+ * @retval その他 エラー。
+ *
+ * @note 解除すると Play / Stop / Pause / Resume は通常動作に戻ります。
+ */
+WitResult WitVoice_ClearTapeEffect(WitVoiceHn voice);
 
 #ifdef __cplusplus
 } /* extern "C" */
