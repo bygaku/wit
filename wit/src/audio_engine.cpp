@@ -97,6 +97,7 @@ struct AudioEngine::Impl {
 
     VoicePool									voice_pool_;	///<
     Mixer										mixer_;			///<
+    uint32_t									fade_samples_ = 1;	///< Fade length in samples
     std::unique_ptr<StreamingReader>			streaming_reader_;	///< Owns the streaming read thread
     RingBuffer<Command, SPSC_QUEUE_CAPACITY>	command_queue_;	///<
     RingBuffer<Event,   SPSC_QUEUE_CAPACITY>	event_queue_;	///<
@@ -119,8 +120,54 @@ struct AudioEngine::Impl {
             std::memset(output, 0,static_cast<size_t>(frame_count) * 2 * sizeof(float));
         }
 
+        // Settle voices whose pause / stop fade finished during this Process().
+        ConfirmFadeTransitions();
+
         // Detect voices that reached the end of their waveforms naturally and mark them FINISHED.
         DetectAndReportFinishedVoices();
+    }
+
+    /**
+     * @brief Start ramping a Voice up toward normal playback speed.
+     * @param from_standstill When true the ramp restarts from a full stop,
+     *        otherwise it continues from the current speed.
+     */
+    static void BeginTapeRise(Voice& v, bool from_standstill) noexcept {
+        if (from_standstill) v.tape.position = 0.0f;
+
+        // The tape taper already brings the level up from silence, so the amplitude fade must stay out of the way.
+        v.fade_gain = 1.0f;
+        v.fade_step = 0.0f;
+
+        // A non-positive duration means the ramp is skipped entirely.
+        if (v.tape.rise_step <= 0.0f || v.tape.position >= 1.0f) {
+            v.tape.position = 1.0f;
+            v.tape.step     = 0.0f;
+            return;
+        }
+
+        // Scale to what actually remains and the configured duration holds wherever the ramp starts.
+        v.tape.step = v.tape.rise_step * (1.0f - v.tape.position);
+    }
+
+    /**
+     * @brief Start ramping a Voice down toward a full stop.
+     * @note Called from the audio thread only. The amplitude fade is left
+     *       alone; the speed ramp alone carries the transition.
+     */
+    static void BeginTapeFall(Voice& v) noexcept {
+        // The tape taper handles the fade to silence at the bottom of the ramp.
+        v.fade_gain = 1.0f;
+        v.fade_step = 0.0f;
+
+        if (v.tape.fall_step <= 0.0f || v.tape.position <= 0.0f) {
+            v.tape.position = 0.0f;
+            v.tape.step     = 0.0f;
+            return;
+        }
+
+        // Scale the step to the remaining distance.
+        v.tape.step = -v.tape.fall_step * v.tape.position;
     }
 
     /**
@@ -134,41 +181,109 @@ struct AudioEngine::Impl {
         if (v == nullptr) return;
 
         switch (cmd.type) {
-            case CommandType::START_PLAYING:
-                if (v->state == VoiceState::CLAIMED) {
-                    // Kick off streaming fills and start immediately when every
-                    // slot can already serve its cursor. Memory-resident slots
-                    // have no streaming pointer and are always ready.
-                    bool all_ready = true;
-                    for (uint8_t wi = 0; wi < v->active_slot_count; ++wi) {
-                        Voice::Slot& slot = v->slots[wi];
-                        if (slot.streaming == nullptr) continue;
+            case CommandType::START_PLAYING: {
+	            if (v->state == VoiceState::CLAIMED) {
+	            	bool all_ready = true;
+	            	for (uint8_t wi = 0; wi < v->active_slot_count; ++wi) {
+	            		Voice::Slot& slot = v->slots[wi];
+	            		if (slot.streaming == nullptr) continue;
 
-                        // Teach the prefetch where the loop wraps so a
-                        // restart finds its data already buffered.
-                        const uint64_t total   = slot.streaming->TotalSampleCount();
-                        const uint64_t wrap_at = (v->loop_end > 0 && v->loop_end < total) ? v->loop_end : 0;
-                        slot.streaming->SetLoopRegion(v->loop_end > 0 ? v->loop_start : 0, wrap_at);
+	            		const uint64_t total   = slot.streaming->TotalSampleCount();
+	            		const uint64_t wrap_at = (v->loop_end > 0 && v->loop_end < total) ? v->loop_end : 0;
+	            		slot.streaming->SetLoopRegion(v->loop_end > 0 ? v->loop_start : 0, wrap_at);
 
-                        slot.streaming->UpdateStreaming(static_cast<uint64_t>(slot.cursor));
-                        if (!slot.streaming->IsReadyAt(static_cast<uint64_t>(slot.cursor))) all_ready = false;
-                    }
-                    v->state = all_ready ? VoiceState::PLAYING : VoiceState::PREPARING;
-                }
-                break;
-            case CommandType::PAUSE_VOICE:
-                if (v->state == VoiceState::PLAYING) v->state = VoiceState::PAUSED;
-                break;
-            case CommandType::RESUME_VOICE:
-                if (v->state == VoiceState::PAUSED) v->state = VoiceState::PLAYING;
-                break;
-            case CommandType::STOP_VOICE:
-                // v1.0: immediate stop (no drain / fade).
-                if (v->state != VoiceState::INACTIVE && v->state != VoiceState::FINISHED) {
-                    v->state = VoiceState::FINISHED;
-                    PostVoiceFinished(cmd.slot_index, cmd.generation);
-                }
-                break;
+	            		slot.streaming->UpdateStreaming(static_cast<uint64_t>(slot.cursor));
+	            		if (!slot.streaming->IsReadyAt(static_cast<uint64_t>(slot.cursor))) all_ready = false;
+	            	}
+	            	v->state = all_ready ? VoiceState::PLAYING : VoiceState::PREPARING;
+
+	            	if (v->tape.active) BeginTapeRise(*v, true);
+	            }
+            	break;
+            }
+            case CommandType::PAUSE_VOICE: {
+	            if (v->state == VoiceState::PLAYING) {
+	            	v->state = VoiceState::PAUSING;
+	            	if (v->tape.active) {
+	            		BeginTapeFall(*v);
+	            	} else {
+	            		v->fade_step = -1.0f / static_cast<float>(fade_samples_);
+	            	}
+	            }
+            	break;
+            }
+            case CommandType::RESUME_VOICE: {
+	            if (v->state == VoiceState::PAUSED) {
+	            	// Skip the click-suppression rewind.
+	            	const double rewind = v->tape.active ? 0.0 : static_cast<double>(fade_samples_);
+	            	for (uint8_t wi = 0; wi < v->active_slot_count; ++wi) {
+	            		double c = v->slots[wi].cursor - rewind;
+	            		if (c < 0.0) c = 0.0;
+	            		v->slots[wi].cursor = c;
+	            	}
+	            	v->state = VoiceState::PLAYING;
+	            	if (v->tape.active) {
+	            		BeginTapeRise(*v, true);
+	            	} else {
+	            		v->fade_step = 1.0f / static_cast<float>(fade_samples_);
+	            	}
+	            } else if (v->state == VoiceState::PAUSING) {
+	            	v->state = VoiceState::PLAYING;
+	            	if (v->tape.active) {
+	            		// Reverse the in-flight fall without restarting from a standstill.
+	            		BeginTapeRise(*v, false);
+	            	} else {
+	            		v->fade_step = 1.0f / static_cast<float>(fade_samples_);
+	            	}
+	            }
+            	break;
+            }
+            case CommandType::STOP_VOICE: {
+	            if (v->state == VoiceState::PLAYING || v->state == VoiceState::PAUSING) {
+	            	v->state = VoiceState::STOPPING;
+	            	if (v->tape.active) {
+	            		BeginTapeFall(*v);
+	            	} else {
+	            		v->fade_step = -1.0f / static_cast<float>(fade_samples_);
+	            	}
+	            } else if (v->state == VoiceState::PAUSED) {
+	            	v->state = VoiceState::FINISHED;
+	            	PostVoiceFinished(cmd.slot_index, cmd.generation);
+	            }
+            	break;
+            }
+        	case CommandType::SET_FILTER: {
+	            v->filter.coeffs = cmd.filter.coeffs;
+            	v->filter.mix    = cmd.filter.mix;
+            	if (!v->filter.active) {
+            		v->filter.channel[0].Reset();
+            		v->filter.channel[1].Reset();
+            	}
+            	v->filter.active = true;
+            	break;
+            }
+            case CommandType::CLEAR_FILTER: {
+	            v->filter.active = false;
+            	v->filter.channel[0].Reset();
+            	v->filter.channel[1].Reset();
+            	break;
+            }
+        	case CommandType::SET_TAPE: {
+	            v->tape.rise_step = cmd.tape.rise_step;
+            	v->tape.fall_step = cmd.tape.fall_step;
+            	if (!v->tape.active) {
+            		v->tape.position = 1.0f;
+            		v->tape.step     = 0.0f;
+            	}
+            	v->tape.active = true;
+            	break;
+            }
+            case CommandType::CLEAR_TAPE: {
+	            v->tape.active   = false;
+            	v->tape.position = 1.0f;
+            	v->tape.step     = 0.0f;
+            	break;
+            }
             case CommandType::NONE:
             default:
                 break;
@@ -184,12 +299,17 @@ struct AudioEngine::Impl {
     void ServiceStreamingVoices() noexcept {
         for (size_t si = 0; si < VoicePool::MAX_VOICE_COUNT; ++si) {
             Voice& v = voice_pool_.At(si);
-            if (v.state != VoiceState::PREPARING && v.state != VoiceState::PLAYING) continue;
+
+            const bool serviceable = v.state == VoiceState::PREPARING
+                                  || v.state == VoiceState::PLAYING
+                                  || v.state == VoiceState::PAUSING
+                                  || v.state == VoiceState::STOPPING;
+            if (!serviceable) continue;
 
             bool all_ready = true;
             for (uint8_t wi = 0; wi < v.active_slot_count; ++wi) {
                 Voice::Slot& slot = v.slots[wi];
-                if (slot.streaming == nullptr) continue;	///< Memory resident: nothing to service
+                if (slot.streaming == nullptr) continue;	///< Memory resident: nothing to process
 
                 const auto cursor = static_cast<uint64_t>(slot.cursor);
                 if (cursor >= slot.streaming->TotalSampleCount()) continue;
@@ -200,6 +320,61 @@ struct AudioEngine::Impl {
 
             if (v.state == VoiceState::PREPARING && all_ready) {
                 v.state = VoiceState::PLAYING;
+            }
+        }
+    }
+
+    /**
+     * @brief Settle voices whose pause / stop fade has completed.
+     */
+    void ConfirmFadeTransitions() noexcept {
+        for (uint8_t slot = 0; slot < VoicePool::MAX_VOICE_COUNT; ++slot) {
+            Voice& v = voice_pool_.At(slot);
+            switch (v.state) {
+                case VoiceState::PAUSING: {
+	                if (v.tape.active) {
+	                	if (v.tape.position <= Voice::TAPE_MIN_POSITION) {
+	                		v.tape.position = 0.0f;
+	                		v.tape.step     = 0.0f;
+	                		v.state         = VoiceState::PAUSED;
+	                	}
+	                } else if (v.fade_gain <= 0.0f) {
+	                	v.fade_gain = 0.0f;
+	                	v.fade_step = 0.0f;
+	                	v.state     = VoiceState::PAUSED;
+	                }
+                	break;
+                }
+                case VoiceState::STOPPING: {
+	                if (v.tape.active) {
+	                	if (v.tape.position <= Voice::TAPE_MIN_POSITION) {
+	                		v.tape.position = 0.0f;
+	                		v.tape.step     = 0.0f;
+	                		v.state         = VoiceState::FINISHED;
+	                		PostVoiceFinishedForSlot(slot);
+	                	}
+	                } else if (v.fade_gain <= 0.0f) {
+	                	v.fade_gain = 0.0f;
+	                	v.fade_step = 0.0f;
+	                	v.state     = VoiceState::FINISHED;
+	                	PostVoiceFinishedForSlot(slot);
+	                }
+                	break;
+                }
+                case VoiceState::PLAYING: {
+	                // Fade-in finished: hold at full gain.
+                	if (v.fade_step > 0.0f && v.fade_gain >= 1.0f) {
+                		v.fade_gain = 1.0f;
+                		v.fade_step = 0.0f;
+                	}
+
+                	if (v.tape.active && v.tape.step > 0.0f && v.tape.position >= 1.0f) {
+                		v.tape.position = 1.0f;
+                		v.tape.step     = 0.0f;
+                	}
+                	break;
+                }
+                default: break;
             }
         }
     }
@@ -243,9 +418,6 @@ struct AudioEngine::Impl {
         e.type       = EventType::VOICE_FINISHED;
         e.slot_index = slot;
         e.generation = generation;
-
-    	/* If the event queue is full, we lose this notification.
-         The slot will still be FINISHED, and the main thread can detect it lazily by other means later. */
     	(void)event_queue_.Enqueue(e);
     }
 
@@ -289,8 +461,7 @@ extern "C" {
 /**
  * @brief Callback function for audio data processing.
  *
- * @note
- * - This function is executed on the audio thread.
+ * @note This function is executed on the audio thread.
  */
 static void WitDataCallback(ma_device* device, void* output,
                             const void* input, ma_uint32 frame_count) {
@@ -348,6 +519,13 @@ WitResult AudioEngine::Init(const char* wpb_path, const WitInitParams* params) {
     impl_->device_started_ = true;
 
     impl_->project_data_        = std::move(pd);
+
+    // Resolve the fade length in samples once, against the real sample rate.
+    const uint32_t sample_rate  = impl_->project_data_->Format().sample_rate;
+    const auto     fade_samples = static_cast<uint32_t>(
+        (Mixer::FADE_DURATION_MS * static_cast<float>(sample_rate)) / 1000.0f);
+    impl_->fade_samples_        = fade_samples > 0 ? fade_samples : 1;
+
     impl_->cue_collection_store_       = std::make_unique<CueCollectionStore>();
     impl_->cue_player_register_ = std::make_unique<CuePlayerRegister>();
 
@@ -369,8 +547,6 @@ void AudioEngine::Shutdown() {
         impl_->device_initialized_ = false;
     }
 
-    // Stop the read thread before any provider can be destroyed so no
-    // in-flight fill request touches freed memory.
     if (impl_->streaming_reader_) {
         impl_->streaming_reader_->Stop();
         impl_->streaming_reader_.reset();
@@ -493,8 +669,8 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
     if (cue->waveform_count == 0)                        return WIT_RESULT_NO_CUE_ATTACHED;
     CueCollectionStore& store = *impl_->cue_collection_store_;
 
-    // A streaming provider holds one read position, so a streaming Cue may
-    // drive only one active Voice at a time. Report it instead of failing silently.
+    // A streaming provider holds one read position, so a streaming Cue may drive only one active Voice at a time.
+	// HACK: Refactor
     if (cue->streaming_mode == StreamingMode::STREAMING) {
         for (size_t si = 0; si < VoicePool::MAX_VOICE_COUNT; ++si) {
             const Voice& other = impl_->voice_pool_.At(si);
@@ -534,9 +710,6 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
     v->cue          = cue;
     v->owner		= player;
 
-    // Resolve the loop region on the cue timeline. Voice-level looping
-    // applies to POLYPHONIC only; SHUFFLE / SEQUENTIAL express looping as
-    // selection-cursor behavior across Play calls instead.
     v->loop_start = 0;
     v->loop_end   = 0;
     if (cue->loop_enabled && cue->cue_type == CueType::POLYPHONIC) {
@@ -553,8 +726,7 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
         }
     }
 
-    // Fill in waveform slots based on the cue's play rule. Providers are
-    // resolved through the owning CueCollection (waveform -> provider bookkeeping).
+    // Fill in waveform slots based on the cue's type.
     const auto total_waves = static_cast<uint32_t>(cue->waveform_count);
     switch (cue->cue_type) {
         case CueType::POLYPHONIC: {
@@ -570,8 +742,6 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
         	break;
         }
         case CueType::SHUFFLE: {
-            // A permutation is generated once and consumed one entry per Play.
-            // Loop ON restarts the same order; loop OFF saturates on its last entry.
             if (!player->HasShuffleOrder()) {
                 std::vector<uint8_t> order(total_waves);
                 std::iota(order.begin(), order.end(), static_cast<uint8_t>(0));
@@ -596,8 +766,6 @@ WitResult AudioEngine::CuePlayerPlay(WitCuePlayerHn player_handle, WitVoiceHn* o
             break;
         }
         case CueType::SEQUENTIAL: {
-            // Loop ON wraps the selection cursor; loop OFF saturates so
-            // further Plays keep producing the last waveform.
             const uint32_t idx = cue->loop_enabled
                 ? player->GetSequentialIndex() % total_waves
                 : std::min(player->GetSequentialIndex(), total_waves - 1);
@@ -722,6 +890,7 @@ WitPlaybackStatus AudioEngine::VoiceGetStatus(WitVoiceHn voice_handle) {
 		case VoiceState::CLAIMED:   return WIT_PLAYBACK_STATUS_PENDING;
 		case VoiceState::PREPARING: return WIT_PLAYBACK_STATUS_PENDING;
 		case VoiceState::PLAYING:   return WIT_PLAYBACK_STATUS_PLAYING;
+		case VoiceState::PAUSING:   return WIT_PLAYBACK_STATUS_PAUSED;
 		case VoiceState::PAUSED:    return WIT_PLAYBACK_STATUS_PAUSED;
 		case VoiceState::STOPPING:  return WIT_PLAYBACK_STATUS_STOPPING;
 		case VoiceState::FINISHED:  return WIT_PLAYBACK_STATUS_FINISHED;
@@ -740,6 +909,7 @@ bool AudioEngine::VoiceIsActive(WitVoiceHn voice_handle) {
 		case VoiceState::CLAIMED:
 		case VoiceState::PREPARING:
 		case VoiceState::PLAYING:
+		case VoiceState::PAUSING:
 		case VoiceState::PAUSED:
 			return true;
 
@@ -785,6 +955,74 @@ WitResult AudioEngine::VoiceResume(WitVoiceHn voice_handle) {
 WitResult AudioEngine::VoiceStop(WitVoiceHn voice_handle) {
     if (!impl_) return WIT_RESULT_INIT_FAILED;
     return PostVoiceCommand(impl_->command_queue_, impl_->voice_pool_, voice_handle, CommandType::STOP_VOICE);
+}
+
+WitResult AudioEngine::VoiceSetFilter(WitVoiceHn voice_handle, const WitFilterParams* params) {
+    if (!impl_)                        return WIT_RESULT_INIT_FAILED;
+    if (params == nullptr)             return WIT_RESULT_INVALID_HANDLE;
+    if (!impl_->project_data_)         return WIT_RESULT_INIT_FAILED;
+    if (impl_->voice_pool_.Find(voice_handle) == nullptr) return WIT_RESULT_INVALID_HANDLE;
+
+    // Coefficients are computed here on the main thread.
+    const auto  sample_rate = static_cast<float>(impl_->project_data_->Format().sample_rate);
+    const float mix         = params->mix_level;
+
+    Command cmd;
+    cmd.type          = CommandType::SET_FILTER;
+    cmd.slot_index    = voice_handle::DecodeSlot(voice_handle);
+    cmd.generation    = voice_handle::DecodeGeneration(voice_handle);
+    cmd.filter.coeffs = biquad::MakeLowpass(params->cutoff_hz, sample_rate);
+    cmd.filter.mix    = (mix < 0.0f) ? 0.0f : (mix > 1.0f ? 1.0f : mix);
+    (void)impl_->command_queue_.Enqueue(cmd);
+
+    return WIT_RESULT_SUCCESS;
+}
+
+WitResult AudioEngine::VoiceClearFilter(WitVoiceHn voice_handle) {
+    if (!impl_) return WIT_RESULT_INIT_FAILED;
+    return PostVoiceCommand(impl_->command_queue_, impl_->voice_pool_, voice_handle, CommandType::CLEAR_FILTER);
+}
+
+/* =====================================================================
+ * Voice - tape effect
+ * ===================================================================== */
+namespace {
+/**
+ * @brief Convert a ramp duration into a per-sample speed increment.
+ * @return 0 when the duration is not positive, meaning the ramp is skipped.
+ */
+float TapeStepFromMs(float duration_ms, float sample_rate) noexcept {
+    if (duration_ms <= 0.0f) return 0.0f;
+
+    const float samples = (duration_ms * sample_rate) / 1000.0f;
+    if (samples < 1.0f) return 0.0f;
+
+    return 1.0f / samples;
+}
+}  // namespace
+
+WitResult AudioEngine::VoiceSetTapeEffect(WitVoiceHn voice_handle, const WitTapeParams* params) {
+    if (!impl_)                        return WIT_RESULT_INIT_FAILED;
+    if (params == nullptr)             return WIT_RESULT_INVALID_HANDLE;
+    if (!impl_->project_data_)         return WIT_RESULT_INIT_FAILED;
+    if (impl_->voice_pool_.Find(voice_handle) == nullptr) return WIT_RESULT_INVALID_HANDLE;
+
+    const auto sample_rate = static_cast<float>(impl_->project_data_->Format().sample_rate);
+
+    Command cmd;
+    cmd.type           = CommandType::SET_TAPE;
+    cmd.slot_index     = voice_handle::DecodeSlot(voice_handle);
+    cmd.generation     = voice_handle::DecodeGeneration(voice_handle);
+    cmd.tape.rise_step = TapeStepFromMs(params->start_ms, sample_rate);
+    cmd.tape.fall_step = TapeStepFromMs(params->stop_ms,  sample_rate);
+    (void)impl_->command_queue_.Enqueue(cmd);
+
+    return WIT_RESULT_SUCCESS;
+}
+
+WitResult AudioEngine::VoiceClearTapeEffect(WitVoiceHn voice_handle) {
+    if (!impl_) return WIT_RESULT_INIT_FAILED;
+    return PostVoiceCommand(impl_->command_queue_, impl_->voice_pool_, voice_handle, CommandType::CLEAR_TAPE);
 }
 
 }

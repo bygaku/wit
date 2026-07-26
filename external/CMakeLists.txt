@@ -19,5 +19,7 @@ set(MINIAUDIO_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(MINIAUDIO_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(MINIAUDIO_BUILD_TOOLS    OFF CACHE BOOL "" FORCE)
 
+set(MINIAUDIO_INSTALL        OFF CACHE BOOL "" FORCE)
+
 # From the wit library side, reference it using `target_link_libraries(wit PRIVATE miniaudio)`
 FetchContent_MakeAvailable(miniaudio)

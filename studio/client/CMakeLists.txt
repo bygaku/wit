@@ -40,6 +40,7 @@ if(MSVC)
             PRIVATE
             /W4
             /permissive-
+            /utf-8
     )
 endif()
 
@@ -68,12 +69,10 @@ install(TARGETS ${APPLICATION_CODE}
         CONFIGURATIONS Release)
 
 if(WIN32 AND WINDEPLOYQT_EXE)
-    install(CODE "
-        execute_process(COMMAND \"${WINDEPLOYQT_EXE}\"
+    install(CODE "execute_process(COMMAND \"${WINDEPLOYQT_EXE}\"
             --no-translations
             --release
             --dir \"\${CMAKE_INSTALL_PREFIX}/studio\"
-            \"\${CMAKE_INSTALL_PREFIX}/studio/${APPLICATION_CODE}.exe\")
-    "
+            \"\${CMAKE_INSTALL_PREFIX}/studio/${APPLICATION_CODE}.exe\")"
             CONFIGURATIONS Release)
 endif()

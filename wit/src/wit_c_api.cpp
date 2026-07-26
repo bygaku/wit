@@ -134,7 +134,7 @@ WitResult WitCuePlayer_GetSequentialIndex(WitCuePlayerHn player, uint32_t* out_i
 }
 
 /* =====================================================================
- * Voice
+ * Voice - all
  * ===================================================================== */
 
 WitPlaybackStatus WitVoice_GetStatus(WitVoiceHn voice) {
@@ -143,7 +143,7 @@ WitPlaybackStatus WitVoice_GetStatus(WitVoiceHn voice) {
 }
 
 bool WitVoice_IsActive(WitVoiceHn voice) {
-	if (!g_engine) return WIT_RESULT_INIT_FAILED;
+	if (!g_engine) return false;
 	return g_engine->VoiceIsActive(voice);
 }
 
@@ -160,6 +160,34 @@ WitResult WitVoice_Resume(WitVoiceHn voice) {
 WitResult WitVoice_Stop(WitVoiceHn voice) {
     if (!g_engine) return WIT_RESULT_INIT_FAILED;
     return g_engine->VoiceStop(voice);
+}
+
+/* =====================================================================
+ * Voice - filter effect
+ * ===================================================================== */
+
+WitResult WitVoice_SetFilter(WitVoiceHn voice, const WitFilterParams* params) {
+    if (!g_engine) return WIT_RESULT_INIT_FAILED;
+    return g_engine->VoiceSetFilter(voice, params);
+}
+
+WitResult WitVoice_ClearFilter(WitVoiceHn voice) {
+    if (!g_engine) return WIT_RESULT_INIT_FAILED;
+    return g_engine->VoiceClearFilter(voice);
+}
+
+/* =====================================================================
+ * Voice - Tape effect
+ * ===================================================================== */
+
+WitResult WitVoice_SetTapeEffect(WitVoiceHn voice, const WitTapeParams* params) {
+    if (!g_engine) return WIT_RESULT_INIT_FAILED;	///< HACK: No clamp now,
+    return g_engine->VoiceSetTapeEffect(voice, params);
+}
+
+WitResult WitVoice_ClearTapeEffect(WitVoiceHn voice) {
+    if (!g_engine) return WIT_RESULT_INIT_FAILED;
+    return g_engine->VoiceClearTapeEffect(voice);
 }
 
 }  // extern "C"

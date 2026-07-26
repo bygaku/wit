@@ -39,6 +39,11 @@ public:
     WitResult Init(const char* wpb_path, const WitInitParams* params);
 
     /**
+     * @brief initialized check.
+     */
+    [[nodiscard]] bool IsInitialized() const;
+
+    /**
      * @brief Stop the device, release all Wccbs and CuePlayers, drop the project.
      * @note Safe to call on an uninitialized engine.
      */
@@ -61,15 +66,13 @@ public:
     void ResumeOutput();
 
     /**
-     * @brief initialized check.
-     */
-    [[nodiscard]] bool IsInitialized() const;
-
-    /**
      * @brief Accessors used by higher-level API implementations.
      */
     [[nodiscard]] const ProjectData* GetProjectData() const;
 
+	/* =====================================================================
+	 * Cue Collection
+	 * ===================================================================== */
     /**
      * @brief Loads WCCB and WWB files, parses their contents, and registers them with the internal audio system.
      *
@@ -82,7 +85,7 @@ public:
     /**
      * @brief Unloads a WCCB (Waveform Cue Control Block) associated with the given handle.
      */
-    void      UnloadCueCollection(WitWccbHn handle);
+    void UnloadCueCollection(WitWccbHn handle);
 
     /**
      * @brief Finds a CueCollection associated with the provided handle.
@@ -90,10 +93,11 @@ public:
      */
     const CueCollection* FindCueCollection(WitWccbHn handle) const;
 
-    // ---- CuePlayer management ----
+	/* =====================================================================
+	 * CuePlayer life management
+	 * ===================================================================== */
     WitCuePlayerHn CreateCuePlayer();
     void           DestroyCuePlayer(WitCuePlayerHn handle);
-
 
 	/* =====================================================================
 	 * Cue Attach
@@ -126,6 +130,18 @@ public:
     WitResult VoicePause (WitVoiceHn voice_handle);
     WitResult VoiceResume(WitVoiceHn voice_handle);
     WitResult VoiceStop  (WitVoiceHn voice_handle);
+
+	/* =====================================================================
+	 * Voice filter
+	 * ===================================================================== */
+	WitResult VoiceSetFilter  (WitVoiceHn voice_handle, const WitFilterParams* params);
+	WitResult VoiceClearFilter(WitVoiceHn voice_handle);
+
+	/* =====================================================================
+	 * Voice tape effect
+	 * ===================================================================== */
+	WitResult VoiceSetTapeEffect  (WitVoiceHn voice_handle, const WitTapeParams* params);
+	WitResult VoiceClearTapeEffect(WitVoiceHn voice_handle);
 
 public:
     struct Impl;
