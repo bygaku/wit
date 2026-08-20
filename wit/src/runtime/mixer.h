@@ -31,8 +31,7 @@ public:
     /**
      * @brief Produce one callback's worth of interleaved stereo float samples.
      */
-    void Process(VoicePool& voices,			const CategoryStore& categories,
-                 uint32_t	frame_count,	float*				 output) noexcept;
+    void Process(VoicePool& voices, const CategoryStore& categories, uint32_t frame_count, float* output) noexcept;
 
 private:
     static constexpr uint32_t TMP_SOURCE_SIZE		= MAX_FRAME_COUNT * 2 + 4;
@@ -41,9 +40,7 @@ private:
     /**
      * @brief Render one control block, holding time-varying parameters fixed.
      */
-    void ProcessBlock(VoicePool& voices,		const CategoryStore& categories,
-                      uint32_t   frame_count,	float*				 out_left,
-                      float*     out_right) noexcept;
+    void ProcessBlock(VoicePool& voices, const CategoryStore& categories, uint32_t frame_count,	float* out_left, float* out_right) noexcept;
 
     std::array<float, MAX_FRAME_COUNT> mix_left_{};
     std::array<float, MAX_FRAME_COUNT> mix_right_{};

@@ -79,8 +79,7 @@ float SampleRandomInRange(float min_v, float max_v) {
  * Forward declaration of the C-linkage callback.
  */
 extern "C" {
-static void WitDataCallback(ma_device* device, void* output,
-                            const void* input, ma_uint32 frame_count);
+static void WitDataCallback(ma_device* device, void* output, const void* input, ma_uint32 frame_count);
 }
 
 /* =====================================================================

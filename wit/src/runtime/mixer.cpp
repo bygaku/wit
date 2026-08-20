@@ -65,9 +65,10 @@ inline float FadeAt(float base, float step, uint32_t offset) noexcept {
 
 } // namespace
 
-void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
-                    uint32_t	frame_count,	float* output) noexcept {
-    if (output == nullptr) return;
+void Mixer::Process(VoicePool& voices, const CategoryStore& categories, uint32_t frame_count, float* output) noexcept {
+    if (output == nullptr) return;	///< no output signal
+
+	// Padding output signal.
     if (frame_count == 0 || frame_count > MAX_FRAME_COUNT) {
         std::memset(output, 0, static_cast<size_t>(frame_count) * 2 * sizeof(float));
         return;
@@ -78,8 +79,7 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
         uint32_t block = frame_count - offset;
         if (block > CONTROL_BLOCK_FRAMES) block = CONTROL_BLOCK_FRAMES;
 
-        ProcessBlock(voices, categories, block,
-                     mix_left_.data() + offset, mix_right_.data() + offset);
+        ProcessBlock(voices, categories, block,mix_left_.data() + offset,mix_right_.data() + offset);
     }
 
     // Apply the limiter.
@@ -93,9 +93,8 @@ void Mixer::Process(VoicePool&	voices,			const CategoryStore& categories,
     }
 }
 
-void Mixer::ProcessBlock(VoicePool&	voices,			const CategoryStore& categories,
-                         uint32_t	frame_count,	float* out_left,
-                         float*		out_right) noexcept {
+void Mixer::ProcessBlock(VoicePool&	voices,	const CategoryStore& categories,
+                         uint32_t frame_count, float* out_left,	float* out_right) noexcept {
     // Zero padding.
     std::fill_n(out_left,  frame_count, 0.0f);
     std::fill_n(out_right, frame_count, 0.0f);

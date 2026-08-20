@@ -36,6 +36,7 @@ if(MSVC)
             PRIVATE
             /W4
             /permissive-
+            /utf-8
     )
 endif()
 
@@ -49,7 +50,7 @@ if(WIT_STUDIO_BUILD_TESTS)
 
     foreach(test_target studio_test_roundtrip studio_test_serializer)
         target_include_directories(${test_target} PRIVATE ${CMAKE_SOURCE_DIR}/wit/src)
-        target_link_libraries(${test_target} PRIVATE studio_core Qt6::Core)
+        target_link_libraries(${test_target} PRIVATE ${STUDIO_CODE} Qt6::Core)
     endforeach()
 
     add_test(NAME studio_roundtrip  COMMAND studio_test_roundtrip)
